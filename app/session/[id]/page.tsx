@@ -50,6 +50,8 @@ const SUGAR_OPTIONS = ["兩倍糖", "正常", "少糖", "無糖"];
 const EXTRA_OPTIONS = ["去冰", "加珍珠", "燕麥奶"];
 const PAYMENT_METHOD_OPTIONS = ["現金", "歐付寶", "其他"];
 
+const ORDER_ITEMS_PER_PAGE = 5;
+
 export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
@@ -82,11 +84,14 @@ export default function SessionPage() {
   const [amountReceivedInput, setAmountReceivedInput] = useState("");
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
 
+  const [activeCategory, setActiveCategory] = useState("");
+  const [orderPage, setOrderPage] = useState(1);
+
   const isLocked = session?.payment_status === "paid";
 
   useEffect(() => {
     if (!sessionId) return;
-    init();
+    void init();
   }, [sessionId]);
 
   useEffect(() => {
@@ -137,7 +142,14 @@ export default function SessionPage() {
       .order("sort_order", { ascending: true });
 
     if (error) throw error;
-    setProducts(data ?? []);
+
+    const nextProducts = data ?? [];
+    setProducts(nextProducts);
+
+    if (nextProducts.length > 0) {
+      const firstCategory = nextProducts[0]?.category ?? "";
+      setActiveCategory((prev) => prev || firstCategory);
+    }
   }
 
   async function loadOrderItems() {
@@ -149,13 +161,38 @@ export default function SessionPage() {
       .order("created_at", { ascending: true });
 
     if (error) throw error;
-    setOrderItems(data ?? []);
+
+    const nextItems = data ?? [];
+    setOrderItems(nextItems);
+
+    const nextPages = Math.max(1, Math.ceil(nextItems.length / ORDER_ITEMS_PER_PAGE));
+    setOrderPage((prev) => Math.min(prev, nextPages));
   }
 
   function safeNumber(value: unknown) {
     const num = Number(value);
     return Number.isFinite(num) ? num : 0;
   }
+
+  const groupedProducts = useMemo(() => {
+    return products.reduce<Record<string, Product[]>>((acc, product) => {
+      if (!acc[product.category]) acc[product.category] = [];
+      acc[product.category].push(product);
+      return acc;
+    }, {});
+  }, [products]);
+
+  const categoryList = useMemo(() => Object.keys(groupedProducts), [groupedProducts]);
+
+  useEffect(() => {
+    if (!activeCategory && categoryList.length > 0) {
+      setActiveCategory(categoryList[0]);
+    }
+  }, [activeCategory, categoryList]);
+
+  const visibleProducts = useMemo(() => {
+    return groupedProducts[activeCategory] ?? [];
+  }, [groupedProducts, activeCategory]);
 
   const itemsSubtotal = useMemo(() => {
     return orderItems.reduce((sum, item) => {
@@ -180,6 +217,15 @@ export default function SessionPage() {
   const remainingAmount = useMemo(() => {
     return Math.max(finalTotal - amountReceived, 0);
   }, [amountReceived, finalTotal]);
+
+  const totalOrderPages = useMemo(() => {
+    return Math.max(1, Math.ceil(orderItems.length / ORDER_ITEMS_PER_PAGE));
+  }, [orderItems.length]);
+
+  const pagedOrderItems = useMemo(() => {
+    const start = (orderPage - 1) * ORDER_ITEMS_PER_PAGE;
+    return orderItems.slice(start, start + ORDER_ITEMS_PER_PAGE);
+  }, [orderItems, orderPage]);
 
   async function refreshTotals(nextTipAmount?: number) {
     const { data, error } = await supabase
@@ -598,479 +644,486 @@ export default function SessionPage() {
     }
   }
 
-  const groupedProducts = useMemo(() => {
-    return products.reduce<Record<string, Product[]>>((acc, product) => {
-      if (!acc[product.category]) acc[product.category] = [];
-      acc[product.category].push(product);
-      return acc;
-    }, {});
-  }, [products]);
-
   if (isLoading) {
-    return <main className="p-8">載入中...</main>;
+    return (
+      <main className="flex h-screen items-center justify-center bg-[#f6f6f3]">
+        載入中...
+      </main>
+    );
   }
 
   if (!session) {
-    return <main className="p-8">找不到此訂單</main>;
+    return (
+      <main className="flex h-screen items-center justify-center bg-[#f6f6f3]">
+        找不到此訂單
+      </main>
+    );
   }
 
   return (
     <>
-      <main className="min-h-screen bg-[#f6f6f3] p-3 md:p-4">
-        <div className="mx-auto max-w-[1700px] xl:h-[calc(100vh-24px)]">
-          <div className="mb-4 flex flex-col gap-3 rounded-3xl bg-white px-4 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
+      <main className="h-screen overflow-hidden bg-[#f6f6f3] p-2 text-gray-900">
+        <div className="mx-auto flex h-full max-w-[1700px] flex-col gap-2">
+          <header className="grid h-[80px] shrink-0 grid-cols-[1fr_auto] items-center rounded-[28px] bg-white px-4 shadow-sm">
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push("/")}
-                className="min-h-[48px] rounded-2xl bg-gray-100 px-4 text-sm font-medium text-gray-800 hover:bg-gray-200 md:text-base"
+                className="h-12 rounded-2xl bg-gray-100 px-4 text-sm font-semibold hover:bg-gray-200"
               >
                 ← 返回座位
               </button>
 
-              <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                主單編號：
-                <span className="ml-1 font-semibold text-gray-900">{session.session_number}</span>
+              <div className="rounded-2xl bg-gray-50 px-4 py-2">
+                <p className="text-xs text-gray-500">主單編號</p>
+                <p className="text-base font-bold">{session.session_number}</p>
               </div>
 
-              <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                來客數：
-                <span className="ml-1 font-semibold text-gray-900">{session.guest_count} 人</span>
+              <div className="rounded-2xl bg-gray-50 px-4 py-2">
+                <p className="text-xs text-gray-500">來客數</p>
+                <p className="text-base font-bold">{session.guest_count} 人</p>
+              </div>
+
+              <div className="rounded-2xl bg-gray-50 px-4 py-2">
+                <p className="text-xs text-gray-500">狀態</p>
+                <p className="text-base font-bold">
+                  {session.payment_status === "paid" ? "已結帳" : "處理中"}
+                </p>
               </div>
             </div>
 
-            <div className="text-sm text-gray-500">Session ID: {sessionId}</div>
-          </div>
+            <button
+              type="button"
+              onClick={handleDeleteSession}
+              disabled={isDeletingSession}
+              className="h-12 rounded-2xl bg-red-100 px-4 text-sm font-semibold text-red-700 hover:bg-red-200 disabled:opacity-60"
+            >
+              {isDeletingSession ? "刪除中..." : "刪除訂單"}
+            </button>
+          </header>
 
-          <div className="grid gap-4 xl:h-[calc(100%-88px)] xl:grid-cols-[0.78fr_0.94fr_1.28fr]">
-            <section className="flex min-h-0 flex-col rounded-3xl bg-white p-4 shadow-sm">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">主單資訊</h2>
-                  <p className="mt-1 text-sm text-gray-500">客人資訊與付款設定</p>
+          <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_420px] gap-2">
+            <section className="grid min-h-0 grid-rows-[auto_auto_auto_1fr_auto] gap-2 rounded-[28px] bg-white p-3 shadow-sm">
+              <div className="rounded-3xl bg-gray-50 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <h2 className="text-lg font-bold">主單資訊</h2>
+                  {isLocked && (
+                    <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
+                      已結帳
+                    </span>
+                  )}
                 </div>
 
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-2xl bg-white p-3">
+                    <p className="text-gray-500">訂單狀態</p>
+                    <p className="mt-1 font-bold">{session.order_status}</p>
+                  </div>
+                  <div className="rounded-2xl bg-white p-3">
+                    <p className="text-gray-500">付款狀態</p>
+                    <p className="mt-1 font-bold">{session.payment_status}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-gray-200 p-3">
+                <label className="mb-1 block text-sm font-medium text-gray-600">付款方式</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {PAYMENT_METHOD_OPTIONS.map((method) => (
+                    <button
+                      key={method}
+                      type="button"
+                      disabled={isLocked}
+                      onClick={() => setPaymentMethod(method)}
+                      className={`h-11 rounded-2xl text-sm font-semibold ${
+                        paymentMethod === method
+                          ? "bg-sky-500 text-white"
+                          : "bg-gray-100 text-gray-700"
+                      } disabled:opacity-60`}
+                    >
+                      {method}
+                    </button>
+                  ))}
+                </div>
                 <button
                   type="button"
-                  onClick={handleDeleteSession}
-                  disabled={isDeletingSession}
-                  className="min-h-[48px] rounded-2xl bg-red-100 px-4 text-sm font-medium text-red-700 hover:bg-red-200 disabled:opacity-60"
+                  onClick={savePaymentMethod}
+                  disabled={isLocked || isSavingPaymentMethod}
+                  className="mt-2 h-11 w-full rounded-2xl bg-sky-100 text-sm font-semibold text-sky-800 hover:bg-sky-200 disabled:opacity-60"
                 >
-                  {isDeletingSession ? "刪除中..." : "刪除訂單"}
+                  {isSavingPaymentMethod ? "儲存中..." : "儲存付款方式"}
                 </button>
               </div>
 
-              <div className="space-y-4 xl:min-h-0 xl:overflow-auto xl:pr-1">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl bg-gray-50 p-4">
-                    <p className="text-sm text-gray-500">訂單狀態</p>
-                    <p className="mt-2 text-lg font-bold text-gray-900">{session.order_status}</p>
-                  </div>
-                  <div className="rounded-2xl bg-gray-50 p-4">
-                    <p className="text-sm text-gray-500">付款狀態</p>
-                    <p className="mt-2 text-lg font-bold text-gray-900">
-                      {session.payment_status}
-                    </p>
-                  </div>
+              <div className="rounded-3xl border border-gray-200 p-3">
+                <label className="mb-1 block text-sm font-medium text-gray-600">客人類型</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {CUSTOMER_TYPES.map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => updateCustomerType(type)}
+                      className={`h-10 rounded-2xl text-sm font-semibold ${
+                        (session.customer_type ?? "客人") === type
+                          ? "bg-amber-500 text-white"
+                          : "bg-gray-100 text-gray-700"
+                      }`}
+                    >
+                      {type}
+                    </button>
+                  ))}
                 </div>
 
-                <div className="rounded-2xl border border-gray-200 p-4">
-                  <label className="block text-sm font-medium text-gray-600">付款方式</label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    disabled={isLocked}
-                    className="mt-2 h-14 w-full rounded-2xl border border-gray-300 bg-white px-4 text-base outline-none focus:border-amber-500 disabled:bg-gray-100"
-                  >
-                    {PAYMENT_METHOD_OPTIONS.map((method) => (
-                      <option key={method} value={method}>
-                        {method}
-                      </option>
-                    ))}
-                  </select>
+                <label className="mt-3 block text-sm font-medium text-gray-600">客人備註</label>
+                <input
+                  type="text"
+                  value={customerLabel}
+                  onChange={(e) => setCustomerLabel(e.target.value)}
+                  placeholder="例如：小安、熟客、阿華朋友"
+                  className="mt-1 h-11 w-full rounded-2xl border border-gray-300 px-3 text-sm outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={saveCustomerLabel}
+                  disabled={isSavingCustomerLabel}
+                  className="mt-2 h-11 w-full rounded-2xl bg-amber-100 text-sm font-semibold text-amber-800 hover:bg-amber-200 disabled:opacity-60"
+                >
+                  {isSavingCustomerLabel ? "儲存中..." : "儲存名稱備註"}
+                </button>
+              </div>
 
+              <div className="rounded-3xl border border-gray-200 p-3">
+                <h2 className="mb-2 text-lg font-bold">快速規格</h2>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="mb-1 text-sm font-medium text-gray-500">溫度</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {TEMP_OPTIONS.map((temp) => (
+                        <button
+                          key={temp}
+                          type="button"
+                          onClick={() => setSelectedTemp(temp)}
+                          className={`h-11 rounded-2xl text-sm font-semibold ${
+                            selectedTemp === temp
+                              ? "bg-blue-500 text-white"
+                              : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {temp}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-1 text-sm font-medium text-gray-500">甜度</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {SUGAR_OPTIONS.map((sugar) => (
+                        <button
+                          key={sugar}
+                          type="button"
+                          onClick={() => setSelectedSugar(sugar)}
+                          className={`h-11 rounded-2xl text-sm font-semibold ${
+                            selectedSugar === sugar
+                              ? "bg-pink-500 text-white"
+                              : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {sugar}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-1 text-sm font-medium text-gray-500">加註</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {EXTRA_OPTIONS.map((extra) => (
+                        <button
+                          key={extra}
+                          type="button"
+                          onClick={() => toggleExtra(extra)}
+                          className={`h-11 rounded-2xl text-sm font-semibold ${
+                            selectedExtras.includes(extra)
+                              ? "bg-violet-500 text-white"
+                              : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {extra}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-3xl bg-gray-50 p-3">
+                <p className="text-xs text-gray-500">目前規格</p>
+                <p className="mt-1 line-clamp-2 text-sm font-bold">{buildSpecNote()}</p>
+              </div>
+            </section>
+
+            <section className="grid min-h-0 grid-rows-[auto_auto_1fr] gap-2 rounded-[28px] bg-white p-3 shadow-sm">
+              <div className="flex items-center justify-between rounded-3xl bg-gray-50 px-4 py-3">
+                <div>
+                  <h2 className="text-xl font-bold">商品點餐</h2>
+                  <p className="text-sm text-gray-500">分類切換，不使用捲動</p>
+                </div>
+                <div className="rounded-2xl bg-white px-4 py-2 text-sm font-medium text-gray-600">
+                  {isAdding ? "加點中..." : "點一下直接加入"}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-5 gap-2">
+                {categoryList.map((category) => (
                   <button
+                    key={category}
                     type="button"
-                    onClick={savePaymentMethod}
-                    disabled={isLocked || isSavingPaymentMethod}
-                    className="mt-3 min-h-[46px] rounded-xl bg-sky-100 px-4 text-sm font-medium text-sky-800 hover:bg-sky-200 disabled:opacity-60"
+                    onClick={() => setActiveCategory(category)}
+                    className={`h-12 rounded-2xl px-3 text-sm font-semibold ${
+                      activeCategory === category
+                        ? "bg-amber-500 text-white"
+                        : "bg-gray-100 text-gray-700"
+                    }`}
                   >
-                    {isSavingPaymentMethod ? "儲存中..." : "儲存付款方式"}
+                    {category}
                   </button>
-                </div>
+                ))}
+              </div>
 
-                <div className="rounded-2xl border border-gray-200 p-4">
-                  <label className="block text-sm font-medium text-gray-600">客人類型</label>
-                  <select
-                    value={session.customer_type ?? "客人"}
-                    onChange={(e) => updateCustomerType(e.target.value)}
-                    className="mt-2 h-14 w-full rounded-2xl border border-gray-300 bg-white px-4 text-base outline-none focus:border-amber-500"
-                  >
-                    {CUSTOMER_TYPES.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="rounded-2xl border border-gray-200 p-4">
-                  <label className="block text-sm font-medium text-gray-600">
-                    客人名稱 / 綽號備註
-                  </label>
-                  <input
-                    type="text"
-                    value={customerLabel}
-                    onChange={(e) => setCustomerLabel(e.target.value)}
-                    placeholder="例如：小安、北投熟客、阿華朋友..."
-                    className="mt-2 h-14 w-full rounded-2xl border border-gray-300 bg-white px-4 text-base outline-none focus:border-amber-500"
-                  />
-
+              <div className="grid min-h-0 grid-cols-3 gap-2">
+                {visibleProducts.slice(0, 12).map((product) => (
                   <button
+                    key={product.id}
                     type="button"
-                    onClick={saveCustomerLabel}
-                    disabled={isSavingCustomerLabel}
-                    className="mt-3 min-h-[46px] rounded-xl bg-amber-100 px-4 text-sm font-medium text-amber-800 hover:bg-amber-200 disabled:opacity-60"
+                    onClick={() => addOrderItem(product)}
+                    disabled={isAdding || isLocked}
+                    className="flex h-full min-h-[112px] flex-col justify-between rounded-[24px] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:bg-amber-50 disabled:opacity-60"
                   >
-                    {isSavingCustomerLabel ? "儲存中..." : "儲存名稱備註"}
+                    <div>
+                      <p className="line-clamp-2 text-lg font-bold leading-tight">
+                        {product.name}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-500">{product.category}</p>
+                    </div>
+                    <p className="mt-3 text-2xl font-bold text-amber-600">${Number(product.price)}</p>
                   </button>
-                </div>
+                ))}
 
-                <div className="rounded-2xl border border-gray-200 p-4">
-                  <div className="mb-3">
-                    <p className="text-sm font-medium text-gray-600">規格快捷鍵</p>
-                    <p className="mt-1 text-xs text-gray-500">先選規格，再點商品</p>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <p className="mb-2 text-sm font-medium text-gray-500">溫度</p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {TEMP_OPTIONS.map((temp) => (
-                          <button
-                            key={temp}
-                            type="button"
-                            onClick={() => setSelectedTemp(temp)}
-                            className={`min-h-[52px] rounded-2xl px-3 text-base font-medium transition ${
-                              selectedTemp === temp
-                                ? "bg-blue-500 text-white"
-                                : "bg-gray-50 text-gray-700 ring-1 ring-gray-200 hover:bg-gray-100"
-                            }`}
-                          >
-                            {temp}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="mb-2 text-sm font-medium text-gray-500">甜度</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {SUGAR_OPTIONS.map((sugar) => (
-                          <button
-                            key={sugar}
-                            type="button"
-                            onClick={() => setSelectedSugar(sugar)}
-                            className={`min-h-[52px] rounded-2xl px-3 text-base font-medium transition ${
-                              selectedSugar === sugar
-                                ? "bg-pink-500 text-white"
-                                : "bg-gray-50 text-gray-700 ring-1 ring-gray-200 hover:bg-gray-100"
-                            }`}
-                          >
-                            {sugar}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="mb-2 text-sm font-medium text-gray-500">加註選項</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {EXTRA_OPTIONS.map((extra) => (
-                          <button
-                            key={extra}
-                            type="button"
-                            onClick={() => toggleExtra(extra)}
-                            className={`min-h-[52px] rounded-2xl px-3 text-base font-medium transition ${
-                              selectedExtras.includes(extra)
-                                ? "bg-violet-500 text-white"
-                                : "bg-gray-50 text-gray-700 ring-1 ring-gray-200 hover:bg-gray-100"
-                            }`}
-                          >
-                            {extra}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-700">
-                      目前規格：
-                      <span className="ml-2 font-semibold text-gray-900">{buildSpecNote()}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {isLocked && (
-                  <div className="rounded-2xl bg-green-100 p-4 text-sm font-medium text-green-800">
-                    此訂單已結帳，目前建議僅查看，不建議再修改品項。
+                {visibleProducts.length === 0 && (
+                  <div className="col-span-3 flex items-center justify-center rounded-[24px] bg-gray-50 text-gray-500">
+                    此分類目前沒有商品
                   </div>
                 )}
               </div>
             </section>
 
-            <section className="flex min-h-0 flex-col rounded-3xl bg-white p-4 shadow-sm">
-              <div className="mb-4 flex items-end justify-between gap-3">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">商品列表</h2>
-                  <p className="mt-1 text-sm text-gray-500">大按鈕設計，適合平板快速點餐</p>
-                </div>
-
-                <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                  {isAdding ? "加點中..." : "可直接點商品加入"}
-                </div>
-              </div>
-
-              <div className="space-y-5 xl:min-h-0 xl:overflow-auto xl:pr-1">
-                {Object.entries(groupedProducts).map(([category, items]) => (
-                  <div key={category}>
-                    <h3 className="mb-3 text-lg font-semibold text-gray-800">{category}</h3>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      {items.map((product) => (
-                        <button
-                          key={product.id}
-                          type="button"
-                          onClick={() => addOrderItem(product)}
-                          disabled={isAdding || isLocked}
-                          className="flex min-h-[92px] flex-col justify-between rounded-3xl border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:bg-amber-50 hover:shadow-md active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <div>
-                            <p className="text-lg font-bold text-gray-900">{product.name}</p>
-                            <p className="mt-1 text-sm text-gray-500">{product.category}</p>
-                          </div>
-                          <p className="mt-3 text-xl font-semibold text-amber-600">
-                            ${Number(product.price)}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="flex min-h-0 flex-col rounded-3xl bg-white shadow-sm xl:grid xl:grid-rows-[auto_minmax(0,1fr)_auto]">
+            <section className="grid min-h-0 grid-rows-[auto_1fr_auto] rounded-[28px] bg-white shadow-sm">
               <div className="border-b border-gray-100 px-4 py-4">
-                <h2 className="text-2xl font-bold text-gray-900">訂單</h2>
-                <p className="mt-1 text-sm text-gray-500">上方看品項，下方直接結帳</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold">訂單</h2>
+                    <p className="mt-1 text-sm text-gray-500">固定畫面，品項改分頁</p>
+                  </div>
+
+                  <div className="rounded-2xl bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-600">
+                    第 {orderPage} / {totalOrderPages} 頁
+                  </div>
+                </div>
               </div>
 
-              <div className="min-h-0 overflow-y-auto px-4 py-4">
-                <div className="space-y-3">
-                  {orderItems.length === 0 ? (
-                    <div className="rounded-2xl bg-gray-100 p-5 text-base text-gray-500">
+              <div className="grid min-h-0 grid-rows-[1fr_auto] gap-2 px-4 py-3">
+                <div className="grid auto-rows-fr gap-2">
+                  {pagedOrderItems.length === 0 ? (
+                    <div className="flex items-center justify-center rounded-3xl bg-gray-100 text-base text-gray-500">
                       尚未加點
                     </div>
                   ) : (
-                    orderItems.map((item) => {
+                    pagedOrderItems.map((item) => {
                       const isComplimentary = Boolean(item.is_complimentary);
                       const displayLineTotal = isComplimentary ? 0 : Number(item.line_total);
 
                       return (
                         <div
                           key={item.id}
-                          className={`rounded-3xl border p-4 shadow-sm ${
+                          className={`grid min-h-0 grid-cols-[1fr_auto] gap-3 rounded-3xl border p-3 ${
                             isComplimentary
                               ? "border-amber-300 bg-amber-50"
                               : "border-gray-200 bg-white"
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-start gap-2">
-                                <p className="break-words text-lg font-bold leading-snug text-gray-900 md:text-xl">
-                                  {item.product_name}
-                                </p>
-                                {isComplimentary && (
-                                  <span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-bold text-amber-900">
-                                    招待
-                                  </span>
-                                )}
-                              </div>
-
-                              <p className="mt-1 break-words text-sm leading-relaxed text-gray-500">
-                                {item.note}
-                              </p>
-
-                              <p className="mt-1 text-sm text-gray-500">
-                                ${Number(item.unit_price)} × {item.quantity}
-                              </p>
-
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="truncate text-base font-bold">{item.product_name}</p>
                               {isComplimentary && (
-                                <p className="mt-1 text-sm font-medium text-amber-700">
-                                  本品項不計價
-                                </p>
+                                <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                                  招待
+                                </span>
                               )}
                             </div>
 
-                            <div className="shrink-0 pl-2 text-right">
-                              <p className="text-lg font-semibold text-gray-900 md:text-xl">
-                                ${displayLineTotal}
-                              </p>
+                            <p className="mt-1 truncate text-xs text-gray-500">{item.note}</p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              ${Number(item.unit_price)} × {item.quantity}
+                            </p>
+
+                            <div className="mt-2 flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => updateItemQuantity(item, item.quantity - 1)}
+                                disabled={isLocked}
+                                className="h-9 min-w-[42px] rounded-2xl bg-gray-200 text-sm font-bold disabled:opacity-60"
+                              >
+                                -1
+                              </button>
+
+                              <div className="flex h-9 min-w-[42px] items-center justify-center rounded-2xl bg-gray-50 px-3 text-sm font-bold ring-1 ring-gray-200">
+                                {item.quantity}
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => updateItemQuantity(item, item.quantity + 1)}
+                                disabled={isLocked}
+                                className="h-9 min-w-[42px] rounded-2xl bg-blue-500 text-sm font-bold text-white disabled:opacity-60"
+                              >
+                                +1
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => toggleComplimentary(item)}
+                                disabled={isLocked}
+                                className={`h-9 rounded-2xl px-3 text-xs font-semibold disabled:opacity-60 ${
+                                  isComplimentary
+                                    ? "bg-amber-500 text-white"
+                                    : "bg-amber-100 text-amber-900"
+                                }`}
+                              >
+                                {isComplimentary ? "取消招待" : "設為招待"}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => removeOrderItem(item.id)}
+                                disabled={isLocked}
+                                className="ml-auto h-9 rounded-2xl bg-red-500 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                              >
+                                刪除
+                              </button>
                             </div>
                           </div>
 
-                          <div className="mt-4">
-                            <label className="block text-sm font-medium text-gray-600">
-                              手動備註
-                            </label>
-                            <textarea
-                              value={noteDrafts[item.id] ?? ""}
-                              onChange={(e) =>
-                                setNoteDrafts((prev) => ({
-                                  ...prev,
-                                  [item.id]: e.target.value,
-                                }))
-                              }
-                              disabled={isLocked}
-                              rows={2}
-                              placeholder="例如：先上、少奶泡、分開裝..."
-                              className="mt-2 w-full rounded-2xl border border-gray-300 px-3 py-3 text-sm outline-none focus:border-amber-500 disabled:bg-gray-100"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => saveCustomNote(item.id)}
-                              disabled={isLocked || savingNoteId === item.id}
-                              className="mt-2 min-h-[40px] rounded-xl bg-amber-100 px-4 text-sm font-medium text-amber-800 hover:bg-amber-200 disabled:opacity-60"
-                            >
-                              {savingNoteId === item.id ? "儲存中..." : "儲存備註"}
-                            </button>
-                          </div>
-
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => updateItemQuantity(item, item.quantity - 1)}
-                              disabled={isLocked}
-                              className="min-h-[48px] min-w-[52px] rounded-2xl bg-gray-200 px-4 text-base font-bold text-gray-800 hover:bg-gray-300 disabled:opacity-60"
-                            >
-                              -1
-                            </button>
-
-                            <div className="flex min-h-[48px] min-w-[60px] items-center justify-center rounded-2xl bg-gray-50 px-4 text-base font-bold text-gray-900 ring-1 ring-gray-200">
-                              {item.quantity}
+                          <div className="flex w-[116px] flex-col justify-between">
+                            <div className="text-right">
+                              <p className="text-lg font-bold">${displayLineTotal}</p>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={() => updateItemQuantity(item, item.quantity + 1)}
-                              disabled={isLocked}
-                              className="min-h-[48px] min-w-[52px] rounded-2xl bg-blue-500 px-4 text-base font-bold text-white hover:bg-blue-600 disabled:opacity-60"
-                            >
-                              +1
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => toggleComplimentary(item)}
-                              disabled={isLocked}
-                              className={`min-h-[48px] rounded-2xl px-4 text-sm font-semibold disabled:opacity-60 ${
-                                isComplimentary
-                                  ? "bg-amber-500 text-white hover:bg-amber-600"
-                                  : "bg-amber-100 text-amber-900 hover:bg-amber-200"
-                              }`}
-                            >
-                              {isComplimentary ? "取消招待" : "設為招待"}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => removeOrderItem(item.id)}
-                              disabled={isLocked}
-                              className="ml-auto min-h-[48px] rounded-2xl bg-red-500 px-5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-60"
-                            >
-                              刪除
-                            </button>
+                            <div>
+                              <textarea
+                                value={noteDrafts[item.id] ?? ""}
+                                onChange={(e) =>
+                                  setNoteDrafts((prev) => ({
+                                    ...prev,
+                                    [item.id]: e.target.value,
+                                  }))
+                                }
+                                disabled={isLocked}
+                                rows={2}
+                                placeholder="備註"
+                                className="w-full resize-none rounded-2xl border border-gray-300 px-2 py-2 text-xs outline-none focus:border-amber-500 disabled:bg-gray-100"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => saveCustomNote(item.id)}
+                                disabled={isLocked || savingNoteId === item.id}
+                                className="mt-1 h-8 w-full rounded-xl bg-amber-100 text-xs font-semibold text-amber-800 disabled:opacity-60"
+                              >
+                                {savingNoteId === item.id ? "儲存中" : "存備註"}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
                     })
                   )}
                 </div>
+
+                <div className="grid grid-cols-[1fr_1fr] gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOrderPage((prev) => Math.max(1, prev - 1))}
+                    disabled={orderPage === 1}
+                    className="h-11 rounded-2xl bg-gray-100 text-sm font-semibold text-gray-700 disabled:opacity-50"
+                  >
+                    上一頁
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrderPage((prev) => Math.min(totalOrderPages, prev + 1))}
+                    disabled={orderPage === totalOrderPages}
+                    className="h-11 rounded-2xl bg-gray-100 text-sm font-semibold text-gray-700 disabled:opacity-50"
+                  >
+                    下一頁
+                  </button>
+                </div>
               </div>
 
-              <div className="rounded-b-3xl border-t border-gray-200 bg-white p-3">
-                <div className="space-y-3">
-                  <div className="flex justify-between text-gray-700">
-                    <span>餐點小計</span>
-                    <span>${itemsSubtotal}</span>
+              <div className="border-t border-gray-200 bg-white px-4 py-3">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">餐點小計</span>
+                    <span className="font-semibold">${itemsSubtotal}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">折扣</span>
+                    <span className="font-semibold">${Number(session.discount_amount ?? 0)}</span>
                   </div>
 
-                  <div className="flex justify-between text-gray-700">
-                    <span>折扣</span>
-                    <span>${Number(session.discount_amount ?? 0)}</span>
+                  <div className="col-span-2 grid grid-cols-[1fr_auto] gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      value={tipAmountInput}
+                      onChange={(e) => setTipAmountInput(e.target.value)}
+                      disabled={isLocked}
+                      className="h-11 rounded-2xl border border-gray-300 px-3 text-sm outline-none focus:border-amber-500 disabled:bg-gray-100"
+                      placeholder="輸入小費"
+                    />
+                    <button
+                      type="button"
+                      onClick={saveTipAmount}
+                      disabled={isLocked || isSavingTip}
+                      className="h-11 rounded-2xl bg-purple-100 px-4 text-sm font-semibold text-purple-800 disabled:opacity-60"
+                    >
+                      {isSavingTip ? "儲存中" : "儲存小費"}
+                    </button>
                   </div>
 
-                  <div className="rounded-2xl border border-gray-200 p-3">
-                    <label className="block text-sm font-medium text-gray-600">小費金額</label>
-                    <div className="mt-2 flex gap-2">
-                      <input
-                        type="number"
-                        min={0}
-                        value={tipAmountInput}
-                        onChange={(e) => setTipAmountInput(e.target.value)}
-                        disabled={isLocked}
-                        className="h-11 flex-1 rounded-2xl border border-gray-300 px-4 text-base outline-none focus:border-amber-500 disabled:bg-gray-100"
-                        placeholder="輸入小費"
-                      />
-                      <button
-                        type="button"
-                        onClick={saveTipAmount}
-                        disabled={isLocked || isSavingTip}
-                        className="min-h-[44px] rounded-2xl bg-purple-100 px-4 text-sm font-medium text-purple-800 hover:bg-purple-200 disabled:opacity-60"
-                      >
-                        {isSavingTip ? "儲存中..." : "儲存"}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between text-gray-700">
-                    <span>付款方式</span>
-                    <span>{paymentMethod}</span>
-                  </div>
-
-                  <div className="flex justify-between text-xl font-bold text-gray-900">
-                    <span>總計</span>
-                    <span>${finalTotal}</span>
-                  </div>
-
-                  <div className="rounded-2xl border border-gray-200 p-3">
-                    <label className="block text-sm font-medium text-gray-600">實收金額</label>
+                  <div className="col-span-2 grid grid-cols-[1fr_auto] gap-2">
                     <input
                       type="number"
                       min={0}
                       value={amountReceivedInput}
                       onChange={(e) => setAmountReceivedInput(e.target.value)}
                       disabled={isLocked}
-                      className="mt-2 h-11 w-full rounded-2xl border border-gray-300 px-4 text-base outline-none focus:border-amber-500 disabled:bg-gray-100"
+                      className="h-11 rounded-2xl border border-gray-300 px-3 text-sm outline-none focus:border-amber-500 disabled:bg-gray-100"
                       placeholder="請輸入實收金額"
                     />
-
-                    <div className="mt-3 space-y-2 text-sm">
-                      <div className="flex justify-between text-gray-700">
-                        <span>應收</span>
-                        <span>${finalTotal}</span>
-                      </div>
-                      <div className="flex justify-between text-gray-700">
-                        <span>找零</span>
-                        <span>${changeAmount}</span>
-                      </div>
-                      {remainingAmount > 0 && (
-                        <div className="flex justify-between font-medium text-red-600">
-                          <span>尚差</span>
-                          <span>${remainingAmount}</span>
-                        </div>
-                      )}
+                    <div className="flex items-center rounded-2xl bg-gray-100 px-4 text-sm font-semibold">
+                      找零 ${changeAmount}
                     </div>
+                  </div>
+
+                  <div className="flex justify-between text-base font-bold">
+                    <span>總計</span>
+                    <span>${finalTotal}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">尚差</span>
+                    <span className={`font-semibold ${remainingAmount > 0 ? "text-red-600" : ""}`}>
+                      ${remainingAmount}
+                    </span>
                   </div>
                 </div>
 
@@ -1078,7 +1131,7 @@ export default function SessionPage() {
                   type="button"
                   onClick={openCheckoutModal}
                   disabled={isPaying || isLocked}
-                  className="mt-3 min-h-[56px] w-full rounded-3xl bg-emerald-500 px-4 text-lg font-bold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="mt-3 h-14 w-full rounded-3xl bg-emerald-500 text-lg font-bold text-white hover:bg-emerald-600 disabled:opacity-60"
                 >
                   {isLocked ? "已結帳" : isPaying ? "結帳中..." : "結帳確認"}
                 </button>
