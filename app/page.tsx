@@ -339,7 +339,7 @@ export default function Home() {
     const isViewing = viewingSession?.seatCodes.includes(table);
 
     const base =
-      "relative flex h-36 md:h-40 xl:h-44 items-center justify-center rounded-3xl border text-2xl font-bold shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70";
+      "relative flex h-[150px] items-center justify-center rounded-[28px] border text-[22px] font-bold shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70";
 
     if (isViewing) return `${base} border-blue-300 bg-blue-500 text-white ring-4 ring-blue-200`;
     if (occupied) return `${base} border-red-300 bg-red-500 text-white ring-4 ring-red-200`;
@@ -354,7 +354,7 @@ export default function Home() {
     const isViewing = viewingSession?.seatCodes.includes(seat);
 
     const base =
-      "relative flex h-28 md:h-32 xl:h-36 items-center justify-center rounded-3xl border text-lg md:text-xl font-bold shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70";
+      "relative flex h-[132px] items-center justify-center rounded-[28px] border text-[20px] font-bold shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70";
 
     if (isViewing) return `${base} border-blue-300 bg-blue-500 text-white ring-4 ring-blue-200`;
     if (occupied) return `${base} border-red-300 bg-red-500 text-white ring-4 ring-red-200`;
@@ -370,27 +370,25 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f6f3] p-3 md:p-4">
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-4 xl:h-[calc(100vh-24px)]">
-        <header className="rounded-3xl bg-white px-4 py-4 shadow-sm">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+    <main className="min-h-screen bg-[#f6f6f3] p-3">
+      <div className="mx-auto flex max-w-[1800px] flex-col gap-4 xl:h-[calc(100vh-24px)]">
+        <header className="rounded-[32px] bg-white px-5 py-5 shadow-sm">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">店內座位圖</h1>
-              <p className="mt-1 text-sm md:text-base text-gray-500">
-                管理現場座位、歷史訂單與今日後台
-              </p>
+              <h1 className="text-4xl font-bold text-gray-900">店內座位圖</h1>
+              <p className="mt-2 text-lg text-gray-500">管理現場座位、歷史訂單與今日後台</p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex gap-3">
               <button
                 onClick={() => router.push("/orders")}
-                className="min-h-[52px] rounded-2xl bg-blue-100 px-5 text-base font-semibold text-blue-800 transition hover:bg-blue-200"
+                className="min-h-[58px] rounded-2xl bg-blue-100 px-6 text-xl font-semibold text-blue-800 hover:bg-blue-200"
               >
                 歷史訂單
               </button>
               <button
                 onClick={() => router.push("/dashboard")}
-                className="min-h-[52px] rounded-2xl bg-emerald-100 px-5 text-base font-semibold text-emerald-800 transition hover:bg-emerald-200"
+                className="min-h-[58px] rounded-2xl bg-emerald-100 px-6 text-xl font-semibold text-emerald-800 hover:bg-emerald-200"
               >
                 今日後台
               </button>
@@ -398,62 +396,58 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <div className="rounded-3xl bg-white p-4 shadow-sm">
-            <p className="text-sm text-gray-500">今日營業額</p>
-            <p className="mt-2 text-2xl md:text-3xl font-bold text-gray-900">${summary.revenue}</p>
+        <section className="grid grid-cols-4 gap-3">
+          <div className="rounded-[28px] bg-white p-4 shadow-sm">
+            <p className="text-base text-gray-500">今日營業額</p>
+            <p className="mt-2 text-4xl font-bold text-gray-900">${summary.revenue}</p>
           </div>
-          <div className="rounded-3xl bg-white p-4 shadow-sm">
-            <p className="text-sm text-gray-500">今日來客數</p>
-            <p className="mt-2 text-2xl md:text-3xl font-bold text-gray-900">{summary.guests} 人</p>
+          <div className="rounded-[28px] bg-white p-4 shadow-sm">
+            <p className="text-base text-gray-500">今日來客數</p>
+            <p className="mt-2 text-4xl font-bold text-gray-900">{summary.guests} 人</p>
           </div>
-          <div className="rounded-3xl bg-white p-4 shadow-sm">
-            <p className="text-sm text-gray-500">今日訂單數</p>
-            <p className="mt-2 text-2xl md:text-3xl font-bold text-gray-900">
-              {summary.orderCount} 張
-            </p>
+          <div className="rounded-[28px] bg-white p-4 shadow-sm">
+            <p className="text-base text-gray-500">今日訂單數</p>
+            <p className="mt-2 text-4xl font-bold text-gray-900">{summary.orderCount} 張</p>
           </div>
-          <div className="rounded-3xl bg-white p-4 shadow-sm">
-            <p className="text-sm text-gray-500">未結帳單數</p>
-            <p className="mt-2 text-2xl md:text-3xl font-bold text-gray-900">
-              {summary.unpaidCount} 張
-            </p>
+          <div className="rounded-[28px] bg-white p-4 shadow-sm">
+            <p className="text-base text-gray-500">未結帳單數</p>
+            <p className="mt-2 text-4xl font-bold text-gray-900">{summary.unpaidCount} 張</p>
           </div>
         </section>
 
-        <div className="grid flex-1 gap-4 xl:min-h-0 xl:grid-cols-[1.6fr_0.85fr]">
-          <section className="rounded-3xl bg-white p-4 shadow-sm xl:min-h-0 xl:overflow-auto">
-            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div className="grid flex-1 gap-4 xl:min-h-0 xl:grid-cols-[1.45fr_0.78fr]">
+          <section className="rounded-[32px] bg-white p-5 shadow-sm xl:min-h-0 xl:overflow-hidden">
+            <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm text-gray-500">目前狀態</p>
-                <p className="mt-1 text-lg md:text-xl font-semibold text-gray-900">
+                <p className="text-base text-gray-500">目前狀態</p>
+                <p className="mt-1 text-4xl font-bold text-gray-900">
                   {viewingSession
                     ? `查看中：${formatSeatLabel(viewingSession.seatCodes)}`
                     : selectedLabel}
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-2 text-xs md:text-sm text-gray-600">
-                <span className="rounded-full bg-red-100 px-3 py-1 font-medium text-red-700">
+              <div className="flex flex-wrap items-center justify-end gap-2 text-sm">
+                <span className="rounded-full bg-red-100 px-4 py-2 font-semibold text-red-700">
                   紅色 = 使用中
                 </span>
-                <span className="rounded-full bg-amber-100 px-3 py-1 font-medium text-amber-700">
+                <span className="rounded-full bg-amber-100 px-4 py-2 font-semibold text-amber-700">
                   黃色 = 目前選取
                 </span>
-                <span className="rounded-full bg-blue-100 px-3 py-1 font-medium text-blue-700">
+                <span className="rounded-full bg-blue-100 px-4 py-2 font-semibold text-blue-700">
                   藍色 = 查看中
                 </span>
               </div>
             </div>
 
-            <div className="grid gap-6">
+            <div className="grid h-[calc(100%-88px)] grid-rows-[auto_auto] gap-6">
               <div>
                 <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-lg md:text-xl font-bold text-gray-900">桌位</h2>
-                  <p className="text-sm text-gray-500">單選</p>
+                  <h2 className="text-[34px] font-bold text-gray-900">桌位</h2>
+                  <p className="text-lg text-gray-500">單選</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="grid grid-cols-4 gap-3">
                   {tables.map((table) => (
                     <button
                       key={table}
@@ -465,11 +459,11 @@ export default function Home() {
                       <div className="flex flex-col items-center gap-2">
                         <span>{table}桌</span>
                         {viewingSession?.seatCodes.includes(table) ? (
-                          <span className="text-sm font-medium opacity-95">查看中</span>
+                          <span className="text-base font-medium opacity-95">查看中</span>
                         ) : isSeatOccupied(table) ? (
-                          <span className="text-sm font-medium opacity-95">使用中</span>
+                          <span className="text-base font-medium opacity-95">使用中</span>
                         ) : (
-                          <span className="text-sm font-medium opacity-70">可開單</span>
+                          <span className="text-base font-medium opacity-70">可開單</span>
                         )}
                       </div>
                     </button>
@@ -477,13 +471,13 @@ export default function Home() {
                 </div>
               </div>
 
-              <div>
+              <div className="min-h-0">
                 <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-lg md:text-xl font-bold text-gray-900">吧檯座位</h2>
-                  <p className="text-sm text-gray-500">可複選</p>
+                  <h2 className="text-[34px] font-bold text-gray-900">吧檯座位</h2>
+                  <p className="text-lg text-gray-500">可複選</p>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-7">
+                <div className="grid grid-cols-7 gap-3">
                   {barSeats.map((seat) => (
                     <button
                       key={seat}
@@ -495,11 +489,11 @@ export default function Home() {
                       <div className="flex flex-col items-center gap-1">
                         <span>{seat}</span>
                         {viewingSession?.seatCodes.includes(seat) ? (
-                          <span className="text-xs font-medium opacity-95">查看中</span>
+                          <span className="text-sm font-medium opacity-95">查看中</span>
                         ) : isSeatOccupied(seat) ? (
-                          <span className="text-xs font-medium opacity-95">使用中</span>
+                          <span className="text-sm font-medium opacity-95">使用中</span>
                         ) : (
-                          <span className="text-xs font-medium opacity-70">可開單</span>
+                          <span className="text-sm font-medium opacity-70">可開單</span>
                         )}
                       </div>
                     </button>
@@ -509,36 +503,36 @@ export default function Home() {
             </div>
           </section>
 
-          <aside className="flex flex-col gap-4 xl:min-h-0">
-            <section className="rounded-3xl bg-white p-5 shadow-sm xl:min-h-0 xl:flex-1 xl:overflow-auto">
+          <aside className="flex min-h-0 flex-col gap-4">
+            <section className="flex-1 rounded-[32px] bg-white p-5 shadow-sm">
               {viewingSession ? (
                 <>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-2xl font-bold text-gray-900">既有主單資訊</h2>
-                      <p className="mt-1 text-sm text-gray-500">點紅色座位後可快速查看</p>
+                      <h2 className="text-[34px] font-bold text-gray-900">既有主單資訊</h2>
+                      <p className="mt-1 text-base text-gray-500">點使用中的座位可快速查看</p>
                     </div>
 
                     <button
                       type="button"
                       onClick={() => setViewingSession(null)}
-                      className="min-h-[44px] rounded-xl bg-gray-100 px-4 text-sm font-medium text-gray-700 hover:bg-gray-200"
+                      className="min-h-[48px] rounded-2xl bg-gray-100 px-4 text-base font-medium text-gray-700 hover:bg-gray-200"
                     >
                       關閉
                     </button>
                   </div>
 
                   <div className="mt-6 space-y-5">
-                    <div>
+                    <div className="rounded-2xl bg-gray-50 p-4">
                       <p className="text-sm text-gray-500">主單編號</p>
-                      <p className="mt-1 text-2xl font-bold text-gray-900">
+                      <p className="mt-2 text-2xl font-bold text-gray-900">
                         {viewingSession.sessionNumber}
                       </p>
                     </div>
 
-                    <div>
+                    <div className="rounded-2xl bg-gray-50 p-4">
                       <p className="text-sm text-gray-500">座位</p>
-                      <p className="mt-1 text-lg font-medium text-gray-900">
+                      <p className="mt-2 text-2xl font-bold text-gray-900">
                         {formatSeatLabel(viewingSession.seatCodes)}
                       </p>
                     </div>
@@ -546,25 +540,21 @@ export default function Home() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="rounded-2xl bg-gray-50 p-4">
                         <p className="text-sm text-gray-500">來客數</p>
-                        <p className="mt-2 text-xl font-bold text-gray-900">
+                        <p className="mt-2 text-2xl font-bold text-gray-900">
                           {viewingSession.guestCount} 人
                         </p>
                       </div>
                       <div className="rounded-2xl bg-gray-50 p-4">
                         <p className="text-sm text-gray-500">付款狀態</p>
-                        <p className="mt-2 text-xl font-bold text-gray-900">
+                        <p className="mt-2 text-2xl font-bold text-gray-900">
                           {viewingSession.paymentStatus}
                         </p>
                       </div>
                     </div>
 
-                    <div className="rounded-2xl bg-blue-50 p-4 text-sm text-blue-800">
-                      這張單目前還在使用中，可直接進入訂單頁繼續操作。
-                    </div>
-
                     <button
                       onClick={() => router.push(`/session/${viewingSession.sessionId}`)}
-                      className="min-h-[60px] w-full rounded-2xl bg-blue-500 px-4 text-lg font-bold text-white hover:bg-blue-600"
+                      className="min-h-[64px] w-full rounded-2xl bg-blue-500 px-4 text-2xl font-bold text-white hover:bg-blue-600"
                     >
                       進入訂單
                     </button>
@@ -572,8 +562,8 @@ export default function Home() {
                 </>
               ) : selectedSeats.length === 0 ? (
                 <>
-                  <h2 className="text-2xl font-bold text-gray-900">開單面板</h2>
-                  <div className="mt-6 rounded-2xl bg-gray-100 p-5 text-base text-gray-600">
+                  <h2 className="text-[34px] font-bold text-gray-900">開單面板</h2>
+                  <div className="mt-6 rounded-2xl bg-gray-100 p-5 text-xl text-gray-600">
                     請先點選一個空位或空桌
                   </div>
                 </>
@@ -581,32 +571,35 @@ export default function Home() {
                 <>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-2xl font-bold text-gray-900">開單面板</h2>
-                      <p className="mt-1 text-sm text-gray-500">確認座位與來客數後開單</p>
+                      <h2 className="text-[34px] font-bold text-gray-900">開單面板</h2>
+                      <p className="mt-1 text-base text-gray-500">確認座位與來客數後開單</p>
                     </div>
 
                     <button
                       type="button"
                       onClick={resetOpenPanelState}
-                      className="min-h-[44px] rounded-xl bg-gray-100 px-4 text-sm font-medium text-gray-700 hover:bg-gray-200"
+                      className="min-h-[48px] rounded-2xl bg-gray-100 px-4 text-base font-medium text-gray-700 hover:bg-gray-200"
                     >
                       清除
                     </button>
                   </div>
 
                   <div className="mt-6 space-y-5">
-                    <div>
+                    <div className="rounded-2xl bg-gray-50 p-4">
                       <p className="text-sm text-gray-500">目前座位</p>
-                      <p className="mt-1 text-3xl font-bold text-gray-900">{selectedLabel}</p>
+                      <p className="mt-2 text-3xl font-bold text-gray-900">{selectedLabel}</p>
                     </div>
 
-                    <div>
+                    <div className="rounded-2xl bg-gray-50 p-4">
                       <p className="text-sm text-gray-500">座位類型</p>
-                      <p className="mt-1 text-lg font-medium text-gray-900">{seatType}</p>
+                      <p className="mt-2 text-2xl font-bold text-gray-900">{seatType}</p>
                     </div>
 
-                    <div>
-                      <label htmlFor="guestCount" className="block text-sm font-medium text-gray-700">
+                    <div className="rounded-2xl border border-gray-200 p-4">
+                      <label
+                        htmlFor="guestCount"
+                        className="block text-base font-medium text-gray-700"
+                      >
                         來客數
                       </label>
                       <input
@@ -624,9 +617,9 @@ export default function Home() {
                         }
                         value={guestCount}
                         onChange={(e) => setGuestCount(Number(e.target.value))}
-                        className="mt-2 h-14 w-full rounded-2xl border border-gray-300 px-4 text-lg outline-none focus:border-amber-500"
+                        className="mt-2 h-16 w-full rounded-2xl border border-gray-300 px-4 text-2xl outline-none focus:border-amber-500"
                       />
-                      <p className="mt-2 text-sm text-gray-500">
+                      <p className="mt-3 text-sm text-gray-500">
                         {isBarSelection && `吧檯位已選 ${selectedSeats.length} 個座位`}
                         {selectedSeats[0] === "B" && "B桌建議 2～4 人"}
                         {(selectedSeats[0] === "C" || selectedSeats[0] === "D") &&
@@ -634,22 +627,18 @@ export default function Home() {
                         {selectedSeats[0] === "E" && "此桌建議 1 人"}
                       </p>
                     </div>
-
-                    <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">
-                      建議先以平板橫向操作這個頁面，按鈕區會更順手。
-                    </div>
                   </div>
                 </>
               )}
             </section>
 
             {!viewingSession && selectedSeats.length > 0 && (
-              <section className="sticky bottom-0 rounded-3xl bg-white p-4 shadow-sm">
+              <section className="rounded-[32px] bg-white p-4 shadow-sm">
                 <button
                   type="button"
                   onClick={handleCreateOrder}
                   disabled={isCreating || isLoadingOccupied}
-                  className="min-h-[64px] w-full rounded-2xl bg-amber-400 px-4 text-lg font-bold text-gray-900 shadow transition hover:bg-amber-300 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-[72px] w-full rounded-2xl bg-amber-400 px-4 text-3xl font-bold text-gray-900 shadow transition hover:bg-amber-300 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isCreating ? "建立中..." : "建立新單"}
                 </button>
