@@ -49,7 +49,48 @@ const TEMP_OPTIONS = ["冰", "涼", "熱"];
 const SUGAR_OPTIONS = ["兩倍糖", "正常", "少糖", "無糖"];
 const EXTRA_OPTIONS = ["去冰", "加珍珠", "燕麥奶"];
 const PAYMENT_METHOD_OPTIONS = ["現金", "歐付寶", "其他"];
-const ORDER_ITEMS_PER_PAGE = 2;
+
+function parseReservationLabel(rawLabel: string) {
+  const value = rawLabel.trim();
+
+  if (!value) {
+    return {
+      reservationName: "",
+      reservationPhone: "",
+    };
+  }
+
+  const separators = ["|", "｜", "/", "／", ","];
+  const separator = separators.find((item) => value.includes(item));
+
+  if (!separator) {
+    return {
+      reservationName: value,
+      reservationPhone: "",
+    };
+  }
+
+  const parts = value
+    .split(separator)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return {
+    reservationName: parts[0] ?? "",
+    reservationPhone: parts[1] ?? "",
+  };
+}
+
+function buildReservationLabel(name: string, phone: string) {
+  const normalizedName = name.trim();
+  const normalizedPhone = phone.trim();
+
+  if (!normalizedName && !normalizedPhone) return "";
+  if (!normalizedPhone) return normalizedName;
+  if (!normalizedName) return normalizedPhone;
+
+  return `${normalizedName} | ${normalizedPhone}`;
+}
 
 export default function SessionPage() {
   const params = useParams();
@@ -71,7 +112,8 @@ export default function SessionPage() {
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
 
-  const [customerLabel, setCustomerLabel] = useState("");
+  const [reservationName, setReservationName] = useState("");
+  const [reservationPhone, setReservationPhone] = useState("");
   const [isSavingCustomerLabel, setIsSavingCustomerLabel] = useState(false);
 
   const [paymentMethod, setPaymentMethod] = useState("現金");
@@ -84,15 +126,8 @@ export default function SessionPage() {
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
 
   const [activeCategory, setActiveCategory] = useState<string>("全部");
-  const [orderPage, setOrderPage] = useState(1);
 
   const isLocked = session?.payment_status === "paid";
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!sessionId) return;
-    init();
-  }, [sessionId]);
 
   useEffect(() => {
     const nextDrafts: Record<string, string> = {};
@@ -101,25 +136,6 @@ export default function SessionPage() {
     }
     setNoteDrafts(nextDrafts);
   }, [orderItems]);
-
-  useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(orderItems.length / ORDER_ITEMS_PER_PAGE));
-    if (orderPage > totalPages) {
-      setOrderPage(totalPages);
-    }
-  }, [orderItems, orderPage]);
-
-  const init = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      await Promise.all([loadSession(), loadProducts(), loadOrderItems()]);
-    } catch (error) {
-      console.error("初始化訂單頁失敗：", error);
-      alert("載入訂單頁失敗，請查看 console");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadSession = useCallback(async () => {
     const { data, error } = await supabase
@@ -131,7 +147,9 @@ export default function SessionPage() {
     if (error) throw error;
 
     setSession(data);
-    setCustomerLabel(data.customer_label ?? "");
+    const reservationInfo = parseReservationLabel(data.customer_label ?? "");
+    setReservationName(reservationInfo.reservationName);
+    setReservationPhone(reservationInfo.reservationPhone);
     setPaymentMethod(data.payment_method ?? "現金");
     setTipAmountInput(String(Number(data.tip_amount ?? 0)));
     setAmountReceivedInput(
@@ -163,6 +181,24 @@ export default function SessionPage() {
     if (error) throw error;
     setOrderItems(data ?? []);
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+
+    async function runInit() {
+      try {
+        setIsLoading(true);
+        await Promise.all([loadSession(), loadProducts(), loadOrderItems()]);
+      } catch (error) {
+        console.error("初始化訂單頁失敗：", error);
+        alert("載入訂單頁失敗，請查看 console");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    runInit();
+  }, [sessionId, loadOrderItems, loadProducts, loadSession]);
 
   function safeNumber(value: unknown) {
     const num = Number(value);
@@ -428,7 +464,7 @@ export default function SessionPage() {
       const { error } = await supabase
         .from("dining_sessions")
         .update({
-          customer_label: customerLabel.trim(),
+          customer_label: buildReservationLabel(reservationName, reservationPhone),
         })
         .eq("id", sessionId);
 
@@ -438,7 +474,7 @@ export default function SessionPage() {
         prev
           ? {
               ...prev,
-              customer_label: customerLabel.trim(),
+              customer_label: buildReservationLabel(reservationName, reservationPhone),
             }
           : prev
       );
@@ -628,13 +664,6 @@ export default function SessionPage() {
     return groupedProducts[activeCategory] ?? [];
   }, [activeCategory, groupedProducts, products]);
 
-  const totalOrderPages = Math.max(1, Math.ceil(orderItems.length / ORDER_ITEMS_PER_PAGE));
-
-  const pagedOrderItems = useMemo(() => {
-    const start = (orderPage - 1) * ORDER_ITEMS_PER_PAGE;
-    return orderItems.slice(start, start + ORDER_ITEMS_PER_PAGE);
-  }, [orderItems, orderPage]);
-
   if (isLoading) {
     return <main className="pos-shell p-8 text-slate-600">載入中...</main>;
   }
@@ -754,22 +783,40 @@ export default function SessionPage() {
                       ))}
                     </div>
 
-                    <div className="mt-4">
-                      <label className="block text-sm font-medium text-gray-600">客人備註</label>
-                      <input
-                        type="text"
-                        value={customerLabel}
-                        onChange={(e) => setCustomerLabel(e.target.value)}
-                        placeholder="例如：小安、熟客、阿華朋友"
-                        className="mt-2 h-14 w-full rounded-2xl border border-gray-300 bg-white px-4 text-base outline-none focus:border-amber-500"
-                      />
+                    <div className="mt-4 grid gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600">
+                          預約姓名
+                        </label>
+                        <input
+                          type="text"
+                          value={reservationName}
+                          onChange={(e) => setReservationName(e.target.value)}
+                          placeholder="例如：王小安"
+                          className="mt-2 h-12 w-full rounded-2xl border border-gray-300 bg-white px-4 text-sm outline-none focus:border-amber-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600">
+                          預約電話
+                        </label>
+                        <input
+                          type="tel"
+                          value={reservationPhone}
+                          onChange={(e) => setReservationPhone(e.target.value)}
+                          placeholder="例如：0912-345-678"
+                          className="mt-2 h-12 w-full rounded-2xl border border-gray-300 bg-white px-4 text-sm outline-none focus:border-amber-500"
+                        />
+                      </div>
+
                       <button
                         type="button"
                         onClick={saveCustomerLabel}
                         disabled={isSavingCustomerLabel}
-                        className="mt-3 min-h-[46px] w-full rounded-2xl bg-amber-100 px-4 text-base font-medium text-amber-900 hover:bg-amber-200 disabled:opacity-60"
+                        className="min-h-[44px] w-full rounded-2xl bg-amber-100 px-4 text-sm font-medium text-amber-900 hover:bg-amber-200 disabled:opacity-60"
                       >
-                        {isSavingCustomerLabel ? "儲存中..." : "儲存名稱備註"}
+                        {isSavingCustomerLabel ? "儲存中..." : "儲存預約資訊"}
                       </button>
                     </div>
                   </div>
@@ -915,20 +962,20 @@ export default function SessionPage() {
                     <p className="mt-1 text-sm text-gray-500">固定畫面，品項分頁顯示</p>
                   </div>
 
-                  <div className="rounded-2xl bg-gray-100 px-4 py-3 text-lg font-semibold text-gray-700">
-                    第 {totalOrderPages === 0 ? 1 : orderPage} / {totalOrderPages} 頁
+                  <div className="rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">
+                    即時訂單
                   </div>
                 </div>
               </div>
 
               <div className="pos-scroll min-h-0 px-4 py-4">
                 <div className="space-y-4">
-                  {pagedOrderItems.length === 0 ? (
+                  {orderItems.length === 0 ? (
                     <div className="rounded-2xl bg-gray-100 p-5 text-base text-gray-500">
                       尚未加點
                     </div>
                   ) : (
-                    pagedOrderItems.map((item) => {
+                    orderItems.map((item) => {
                       const isComplimentary = Boolean(item.is_complimentary);
                       const displayLineTotal = isComplimentary ? 0 : Number(item.line_total);
 
@@ -1052,34 +1099,13 @@ export default function SessionPage() {
               </div>
 
               <div className="rounded-b-3xl border-t border-gray-200 bg-white p-4">
-                <div className="mb-3 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setOrderPage((prev) => Math.max(1, prev - 1))}
-                    disabled={orderPage <= 1}
-                    className="min-h-[48px] rounded-2xl bg-gray-100 px-4 text-base font-semibold text-gray-700 hover:bg-gray-200 disabled:opacity-40"
-                  >
-                    上一頁
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOrderPage((prev) => Math.min(totalOrderPages, prev + 1))
-                    }
-                    disabled={orderPage >= totalOrderPages}
-                    className="min-h-[48px] rounded-2xl bg-gray-100 px-4 text-base font-semibold text-gray-700 hover:bg-gray-200 disabled:opacity-40"
-                  >
-                    下一頁
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between text-lg text-gray-700">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm text-gray-700">
                     <span>餐點小計</span>
                     <span>${itemsSubtotal}</span>
                   </div>
 
-                  <div className="flex justify-between text-lg text-gray-700">
+                  <div className="flex justify-between text-sm text-gray-700">
                     <span>折扣</span>
                     <span>${Number(session.discount_amount ?? 0)}</span>
                   </div>
@@ -1091,14 +1117,14 @@ export default function SessionPage() {
                       value={tipAmountInput}
                       onChange={(e) => setTipAmountInput(e.target.value)}
                       disabled={isLocked}
-                      className="h-14 rounded-2xl border border-gray-300 px-4 text-lg outline-none focus:border-amber-500 disabled:bg-gray-100"
+                      className="h-11 rounded-2xl border border-gray-300 px-4 text-sm outline-none focus:border-amber-500 disabled:bg-gray-100"
                       placeholder="小費金額"
                     />
                     <button
                       type="button"
                       onClick={saveTipAmount}
                       disabled={isLocked || isSavingTip}
-                      className="min-h-[56px] rounded-2xl bg-purple-100 px-5 text-base font-semibold text-purple-900 hover:bg-purple-200 disabled:opacity-60"
+                      className="min-h-[44px] rounded-2xl bg-purple-100 px-4 text-sm font-semibold text-purple-900 hover:bg-purple-200 disabled:opacity-60"
                     >
                       {isSavingTip ? "儲存中..." : "儲存小費"}
                     </button>
@@ -1111,21 +1137,21 @@ export default function SessionPage() {
                       value={amountReceivedInput}
                       onChange={(e) => setAmountReceivedInput(e.target.value)}
                       disabled={isLocked}
-                      className="h-14 rounded-2xl border border-gray-300 px-4 text-lg outline-none focus:border-amber-500 disabled:bg-gray-100"
+                      className="h-11 rounded-2xl border border-gray-300 px-4 text-sm outline-none focus:border-amber-500 disabled:bg-gray-100"
                       placeholder="實收金額"
                     />
-                    <div className="flex min-h-[56px] items-center rounded-2xl bg-gray-100 px-5 text-lg font-semibold text-gray-700">
+                    <div className="flex min-h-[44px] items-center rounded-2xl bg-gray-100 px-4 text-sm font-semibold text-gray-700">
                       找零 ${changeAmount}
                     </div>
                   </div>
 
                   <div className="flex items-end justify-between">
                     <div className="space-y-1">
-                      <div className="text-lg font-bold text-gray-900">
+                      <div className="text-base font-bold text-gray-900">
                         總計 ${finalTotal}
                       </div>
                       {remainingAmount > 0 && (
-                        <div className="text-lg font-semibold text-red-600">
+                        <div className="text-sm font-semibold text-red-600">
                           尚差 ${remainingAmount}
                         </div>
                       )}
@@ -1137,7 +1163,7 @@ export default function SessionPage() {
                   type="button"
                   onClick={openCheckoutModal}
                   disabled={isPaying || isLocked}
-                  className="mt-4 min-h-[64px] w-full rounded-3xl bg-emerald-500 px-4 text-2xl font-bold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="mt-3 min-h-[56px] w-full rounded-3xl bg-emerald-500 px-4 text-xl font-bold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isLocked ? "已結帳" : isPaying ? "結帳中..." : "結帳確認"}
                 </button>

@@ -12,7 +12,6 @@ type SessionRow = {
   payment_status: string;
   payment_method?: string | null;
   total_amount: number;
-  tip_amount?: number | null;
   customer_type?: string | null;
   created_at?: string | null;
 };
@@ -39,6 +38,15 @@ type ActiveSessionCard = {
   total_amount: number;
   customer_type?: string | null;
   seat_codes: string[];
+};
+
+type TimeBlock = {
+  label: string;
+  startHour: number;
+  endHour: number;
+  orderCount: number;
+  guestCount: number;
+  revenue: number;
 };
 
 export default function DashboardPage() {
@@ -89,6 +97,7 @@ export default function DashboardPage() {
       if (activeError) throw activeError;
 
       const seatMap = new Map<string, string[]>();
+
       if ((activeData ?? []).length > 0) {
         const { data: seatData, error: seatError } = await supabase
           .from("session_seats")
@@ -202,6 +211,34 @@ export default function DashboardPage() {
     return [...map.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 6);
   }, [orderItems, paidSessions]);
 
+  const timeBlocks = useMemo<TimeBlock[]>(() => {
+    const blocks: TimeBlock[] = [
+      { label: "13:00-14:00", startHour: 13, endHour: 14, orderCount: 0, guestCount: 0, revenue: 0 },
+      { label: "14:00-15:00", startHour: 14, endHour: 15, orderCount: 0, guestCount: 0, revenue: 0 },
+      { label: "15:00-16:00", startHour: 15, endHour: 16, orderCount: 0, guestCount: 0, revenue: 0 },
+      { label: "16:00-17:00", startHour: 16, endHour: 17, orderCount: 0, guestCount: 0, revenue: 0 },
+      { label: "17:00-18:00", startHour: 17, endHour: 18, orderCount: 0, guestCount: 0, revenue: 0 },
+    ];
+
+    for (const session of sessions) {
+      if (!session.created_at) continue;
+      const createdAt = new Date(session.created_at);
+      if (Number.isNaN(createdAt.getTime())) continue;
+
+      const hour = createdAt.getHours();
+      const block = blocks.find((item) => hour >= item.startHour && hour < item.endHour);
+      if (!block) continue;
+
+      block.orderCount += 1;
+      block.guestCount += Number(session.guest_count ?? 0);
+      if (session.payment_status === "paid") {
+        block.revenue += Number(session.total_amount ?? 0);
+      }
+    }
+
+    return blocks;
+  }, [sessions]);
+
   const paymentMethodStats = useMemo(() => {
     const stats: Record<string, number> = {};
     for (const session of sessions) {
@@ -226,7 +263,7 @@ export default function DashboardPage() {
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">今日後台</h1>
-                <p className="text-sm text-slate-500">縮短頂部高度，讓下面資料真正露出來</p>
+                <p className="text-sm text-slate-500">下午 13:00 到 18:00 的營運監看</p>
               </div>
             </div>
 
@@ -262,7 +299,7 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[1.2fr_0.9fr_0.9fr]">
+        <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[1.15fr_0.85fr_0.95fr]">
           <Panel title="未結帳訂單">
             {activeSessions.length === 0 ? (
               <Empty text="目前沒有未結帳訂單" />
@@ -319,38 +356,45 @@ export default function DashboardPage() {
             )}
           </Panel>
 
-          <Panel title="付款方式與摘要">
-            <div className="space-y-4">
-              <div className="space-y-3">
-                {paymentMethodStats.length === 0 ? (
-                  <Empty text="尚無付款方式資料" />
-                ) : (
-                  paymentMethodStats.map(([method, count]) => (
-                    <div key={method}>
-                      <div className="mb-1 flex items-center justify-between text-sm">
-                        <span className="font-medium text-slate-700">{method}</span>
-                        <span className="text-slate-500">{count} 筆</span>
-                      </div>
-                      <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-                        <div
-                          className="h-full rounded-full bg-indigo-500"
-                          style={{
-                            width: `${(count / Math.max(...paymentMethodStats.map((item) => item[1]), 1)) * 100}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+          <Panel title="13:00-18:00 來客時段分析">
+            <div className="space-y-3">
+              {timeBlocks.map((block) => (
+                <div key={block.label} className="rounded-[24px] bg-slate-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-900">{block.label}</p>
+                    <p className="text-sm font-semibold text-emerald-700">${block.revenue}</p>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <Mini label="訂單" value={`${block.orderCount} 張`} />
+                    <Mini label="來客" value={`${block.guestCount} 人`} />
+                  </div>
+                </div>
+              ))}
 
-              <div className="grid gap-2">
-                <Mini label="已付款" value={`${paidSessions.length} 張`} />
-                <Mini label="未結帳" value={`${activeSessions.length} 張`} />
-                <Mini
-                  label="更新時間"
-                  value={new Date().toLocaleTimeString("zh-TW", { hour12: false })}
-                />
+              <div className="rounded-[24px] border border-slate-200 bg-white p-4">
+                <h3 className="text-sm font-semibold text-slate-900">付款方式摘要</h3>
+                <div className="mt-3 space-y-3">
+                  {paymentMethodStats.length === 0 ? (
+                    <Empty text="尚無付款方式資料" />
+                  ) : (
+                    paymentMethodStats.map(([method, count]) => (
+                      <div key={method}>
+                        <div className="mb-1 flex items-center justify-between text-sm">
+                          <span className="font-medium text-slate-700">{method}</span>
+                          <span className="text-slate-500">{count} 筆</span>
+                        </div>
+                        <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-indigo-500"
+                            style={{
+                              width: `${(count / Math.max(...paymentMethodStats.map((item) => item[1]), 1)) * 100}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </Panel>
@@ -380,7 +424,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 
 function Mini({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-slate-50 px-3 py-2.5">
+    <div className="rounded-2xl bg-white px-3 py-2.5">
       <p className="text-[11px] text-slate-500">{label}</p>
       <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
     </div>
