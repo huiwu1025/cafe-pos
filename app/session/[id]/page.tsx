@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -88,6 +88,7 @@ export default function SessionPage() {
 
   const isLocked = session?.payment_status === "paid";
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!sessionId) return;
     init();
@@ -108,7 +109,7 @@ export default function SessionPage() {
     }
   }, [orderItems, orderPage]);
 
-  async function init() {
+  const init = useCallback(async () => {
     try {
       setIsLoading(true);
       await Promise.all([loadSession(), loadProducts(), loadOrderItems()]);
@@ -118,9 +119,9 @@ export default function SessionPage() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function loadSession() {
+  const loadSession = useCallback(async () => {
     const { data, error } = await supabase
       .from("dining_sessions")
       .select("*")
@@ -138,9 +139,9 @@ export default function SessionPage() {
         ? String(Number(data.amount_received))
         : ""
     );
-  }
+  }, [sessionId]);
 
-  async function loadProducts() {
+  const loadProducts = useCallback(async () => {
     const { data, error } = await supabase
       .from("products")
       .select("*")
@@ -149,9 +150,9 @@ export default function SessionPage() {
 
     if (error) throw error;
     setProducts(data ?? []);
-  }
+  }, []);
 
-  async function loadOrderItems() {
+  const loadOrderItems = useCallback(async () => {
     const { data, error } = await supabase
       .from("order_items")
       .select("*")
@@ -161,7 +162,7 @@ export default function SessionPage() {
 
     if (error) throw error;
     setOrderItems(data ?? []);
-  }
+  }, [sessionId]);
 
   function safeNumber(value: unknown) {
     const num = Number(value);
@@ -644,7 +645,7 @@ export default function SessionPage() {
 
   return (
     <>
-      <main className="min-h-screen bg-[#f6f6f3] p-3 md:p-4">
+      <main className="pos-shell bg-[#f6f6f3] p-3 md:p-4">
         <div className="mx-auto max-w-[1800px] xl:h-[calc(100vh-24px)]">
           <div className="mb-4 flex flex-col gap-3 rounded-3xl bg-white px-4 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-2">

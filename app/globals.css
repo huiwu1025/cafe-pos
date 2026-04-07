@@ -1,26 +1,86 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f3efe7;
+  --foreground: #172033;
+  --panel: rgba(255, 255, 255, 0.94);
+  --panel-strong: #ffffff;
+  --line: rgba(23, 32, 51, 0.08);
+  --accent: #d97706;
+  --accent-soft: #fff1cc;
+  --ink-soft: #667085;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-mono: "Consolas", "SFMono-Regular", "Roboto Mono", monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  overscroll-behavior: none;
+}
+
+html {
+  background:
+    radial-gradient(circle at top left, rgba(217, 119, 6, 0.12), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.1), transparent 30%),
+    linear-gradient(180deg, #f8f3ea 0%, #f1ece3 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.pos-shell {
+  min-height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.pos-panel {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow:
+    0 10px 30px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(14px);
+}
+
+.pos-scroll {
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+}
+
+.pos-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.pos-scroll::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.28);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.pos-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }

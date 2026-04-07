@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -22,11 +22,11 @@ type DashboardSummary = {
   unpaidCount: number;
 };
 
+const TABLES = ["E", "D", "C", "B"];
+const BAR_SEATS = ["A7", "A6", "A5", "A4", "A3", "A2", "A1"];
+
 export default function Home() {
   const router = useRouter();
-
-  const tables = ["E", "D", "C", "B"];
-  const barSeats = ["A7", "A6", "A5", "A4", "A3", "A2", "A1"];
 
   const [selectedSeats, setSelectedSeats] = useState<string[]>([]);
   const [guestCount, setGuestCount] = useState(1);
@@ -46,24 +46,17 @@ export default function Home() {
   }, [selectedSeats]);
 
   const seatType = useMemo(() => {
-    if (selectedSeats.length === 0) return null;
-    if (isBarSelection) return "吧檯座位";
-    return "桌位";
-  }, [selectedSeats, isBarSelection]);
+    if (selectedSeats.length === 0) return "未選擇";
+    return isBarSelection ? "吧檯座位" : "桌位";
+  }, [isBarSelection, selectedSeats.length]);
 
-  const selectedLabel =
-    selectedSeats.length === 0
-      ? "尚未選擇"
-      : isBarSelection
-      ? selectedSeats.join("、")
-      : `${selectedSeats[0]}桌`;
+  const selectedLabel = useMemo(() => {
+    if (selectedSeats.length === 0) return "尚未選擇";
+    if (isBarSelection) return selectedSeats.join("、");
+    return `${selectedSeats[0]}桌`;
+  }, [isBarSelection, selectedSeats]);
 
-  useEffect(() => {
-    loadOccupiedSeats();
-    loadTodaySummary();
-  }, []);
-
-  async function loadTodaySummary() {
+  const loadTodaySummary = useCallback(async () => {
     try {
       const now = new Date();
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -81,9 +74,7 @@ export default function Home() {
       const revenue = rows
         .filter((row) => row.payment_status === "paid")
         .reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
-
       const guests = rows.reduce((sum, row) => sum + Number(row.guest_count ?? 0), 0);
-
       const unpaidCount = rows.filter(
         (row) => row.order_status === "open" && row.payment_status === "unpaid"
       ).length;
@@ -97,9 +88,9 @@ export default function Home() {
     } catch (error) {
       console.error("載入今日摘要失敗：", error);
     }
-  }
+  }, []);
 
-  async function loadOccupiedSeats() {
+  const loadOccupiedSeats = useCallback(async () => {
     try {
       setIsLoadingOccupied(true);
 
@@ -128,9 +119,7 @@ export default function Home() {
         const session = Array.isArray(row.dining_sessions)
           ? row.dining_sessions[0]
           : row.dining_sessions;
-
         const seat = Array.isArray(row.seats) ? row.seats[0] : row.seats;
-
         const isOccupied =
           session?.order_status === "open" && session?.payment_status === "unpaid";
 
@@ -155,17 +144,7 @@ export default function Home() {
       }
 
       for (const sessionInfo of sessionMap.values()) {
-        sessionInfo.seatCodes.sort((a, b) => {
-          const aIsBar = a.startsWith("A");
-          const bIsBar = b.startsWith("A");
-
-          if (aIsBar && bIsBar) {
-            return Number(a.replace("A", "")) - Number(b.replace("A", ""));
-          }
-
-          return a.localeCompare(b);
-        });
-
+        sessionInfo.seatCodes.sort(sortSeatCodes);
         for (const seatCode of sessionInfo.seatCodes) {
           nextOccupiedSeats[seatCode] = sessionInfo;
         }
@@ -178,6 +157,28 @@ export default function Home() {
     } finally {
       setIsLoadingOccupied(false);
     }
+  }, []);
+
+  useEffect(() => {
+    loadOccupiedSeats();
+    loadTodaySummary();
+  }, [loadOccupiedSeats, loadTodaySummary]);
+
+  function sortSeatCodes(a: string, b: string) {
+    const aIsBar = a.startsWith("A");
+    const bIsBar = b.startsWith("A");
+
+    if (aIsBar && bIsBar) {
+      return Number(a.replace("A", "")) - Number(b.replace("A", ""));
+    }
+
+    return a.localeCompare(b);
+  }
+
+  function formatSeatLabel(seatCodes: string[]) {
+    const isAllBar = seatCodes.every((seat) => seat.startsWith("A"));
+    if (isAllBar) return seatCodes.join("、");
+    return seatCodes.map((seat) => `${seat}桌`).join("、");
   }
 
   function getOccupiedSessionBySeat(seatCode: string) {
@@ -206,13 +207,9 @@ export default function Home() {
     setViewingSession(null);
     setSelectedSeats([table]);
 
-    if (table === "B") {
-      setGuestCount(2);
-    } else if (table === "C" || table === "D") {
-      setGuestCount(2);
-    } else if (table === "E") {
-      setGuestCount(1);
-    }
+    if (table === "B") setGuestCount(2);
+    if (table === "C" || table === "D") setGuestCount(2);
+    if (table === "E") setGuestCount(1);
   }
 
   function handleSelectBarSeat(seat: string) {
@@ -228,21 +225,11 @@ export default function Home() {
 
     setSelectedSeats((prev) => {
       const onlyBarSeats = prev.filter((item) => item.startsWith("A"));
+      const nextSeats = onlyBarSeats.includes(seat)
+        ? onlyBarSeats.filter((item) => item !== seat)
+        : [...onlyBarSeats, seat];
 
-      let nextSeats: string[];
-
-      if (onlyBarSeats.includes(seat)) {
-        nextSeats = onlyBarSeats.filter((item) => item !== seat);
-      } else {
-        nextSeats = [...onlyBarSeats, seat];
-      }
-
-      nextSeats.sort((a, b) => {
-        const aNum = Number(a.replace("A", ""));
-        const bNum = Number(b.replace("A", ""));
-        return aNum - bNum;
-      });
-
+      nextSeats.sort(sortSeatCodes);
       setGuestCount(nextSeats.length === 0 ? 1 : nextSeats.length);
 
       return nextSeats;
@@ -275,7 +262,6 @@ export default function Home() {
 
     try {
       setIsCreating(true);
-
       const sessionNumber = generateSessionNumber();
 
       const { data: sessionData, error: sessionError } = await supabase
@@ -303,7 +289,6 @@ export default function Home() {
         .in("seat_code", selectedSeats);
 
       if (seatsError) throw seatsError;
-
       if (!seatRows || seatRows.length === 0) {
         throw new Error("找不到對應的座位資料");
       }
@@ -319,8 +304,6 @@ export default function Home() {
 
       if (sessionSeatsError) throw sessionSeatsError;
 
-      alert(`建立成功！\n主單編號：${sessionNumber}`);
-
       resetOpenPanelState();
       await loadOccupiedSeats();
       await loadTodaySummary();
@@ -333,62 +316,59 @@ export default function Home() {
     }
   }
 
-  function getTableClass(table: string) {
-    const isSelected = selectedSeats.includes(table);
-    const occupied = isSeatOccupied(table);
-    const isViewing = viewingSession?.seatCodes.includes(table);
-
-    const base =
-      "relative flex h-[150px] items-center justify-center rounded-[28px] border text-[22px] font-bold shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70";
-
-    if (isViewing) return `${base} border-blue-300 bg-blue-500 text-white ring-4 ring-blue-200`;
-    if (occupied) return `${base} border-red-300 bg-red-500 text-white ring-4 ring-red-200`;
-    if (isSelected)
-      return `${base} border-amber-300 bg-amber-300 text-gray-900 ring-4 ring-amber-200`;
-    return `${base} border-gray-200 bg-white text-gray-900`;
-  }
-
-  function getBarSeatClass(seat: string) {
+  function getSeatClass(seat: string, size: "table" | "bar") {
     const isSelected = selectedSeats.includes(seat);
     const occupied = isSeatOccupied(seat);
     const isViewing = viewingSession?.seatCodes.includes(seat);
+    const height = size === "table" ? "min-h-[132px]" : "min-h-[112px]";
 
     const base =
-      "relative flex h-[132px] items-center justify-center rounded-[28px] border text-[20px] font-bold shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70";
+      `${height} rounded-[28px] border px-3 py-4 text-center shadow-sm transition ` +
+      "active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70";
 
-    if (isViewing) return `${base} border-blue-300 bg-blue-500 text-white ring-4 ring-blue-200`;
-    if (occupied) return `${base} border-red-300 bg-red-500 text-white ring-4 ring-red-200`;
-    if (isSelected)
-      return `${base} border-amber-300 bg-amber-300 text-gray-900 ring-4 ring-amber-200`;
-    return `${base} border-gray-200 bg-white text-gray-900`;
+    if (isViewing) return `${base} border-blue-200 bg-blue-500 text-white ring-4 ring-blue-100`;
+    if (occupied) return `${base} border-rose-200 bg-rose-500 text-white ring-4 ring-rose-100`;
+    if (isSelected) {
+      return `${base} border-amber-200 bg-amber-300 text-slate-900 ring-4 ring-amber-100`;
+    }
+    return `${base} border-slate-200 bg-white text-slate-900 hover:border-amber-200 hover:bg-amber-50`;
   }
 
-  function formatSeatLabel(seatCodes: string[]) {
-    const isAllBar = seatCodes.every((seat) => seat.startsWith("A"));
-    if (isAllBar) return seatCodes.join("、");
-    return seatCodes.map((seat) => `${seat}桌`).join("、");
-  }
+  const selectionGuestLimit = isBarSelection
+    ? selectedSeats.length || 1
+    : selectedSeats[0] === "B"
+    ? 4
+    : selectedSeats[0] === "E"
+    ? 1
+    : 2;
 
   return (
-    <main className="min-h-screen bg-[#f6f6f3] p-3">
-      <div className="mx-auto flex max-w-[1800px] flex-col gap-4 xl:h-[calc(100vh-24px)]">
-        <header className="rounded-[32px] bg-white px-5 py-5 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
+    <main className="pos-shell p-3 md:p-4">
+      <div className="mx-auto flex h-full max-w-[1800px] flex-col gap-3 lg:gap-4">
+        <header className="pos-panel rounded-[30px] px-4 py-4 lg:px-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-gray-900">店內座位圖</h1>
-              <p className="mt-2 text-lg text-gray-500">管理現場座位、歷史訂單與今日後台</p>
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-amber-700">
+                Cafe POS
+              </p>
+              <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-2">
+                <h1 className="text-3xl font-bold text-slate-900 lg:text-4xl">座位主控台</h1>
+                <p className="pb-1 text-base text-slate-500">
+                  平板優先的一屏式開單與現場操作
+                </p>
+              </div>
             </div>
 
-            <div className="flex gap-3">
+            <div className="grid grid-cols-2 gap-2 lg:flex">
               <button
                 onClick={() => router.push("/orders")}
-                className="min-h-[58px] rounded-2xl bg-blue-100 px-6 text-xl font-semibold text-blue-800 hover:bg-blue-200"
+                className="min-h-[58px] rounded-2xl bg-sky-100 px-5 text-base font-semibold text-sky-900 transition hover:bg-sky-200"
               >
                 歷史訂單
               </button>
               <button
                 onClick={() => router.push("/dashboard")}
-                className="min-h-[58px] rounded-2xl bg-emerald-100 px-6 text-xl font-semibold text-emerald-800 hover:bg-emerald-200"
+                className="min-h-[58px] rounded-2xl bg-emerald-100 px-5 text-base font-semibold text-emerald-900 transition hover:bg-emerald-200"
               >
                 今日後台
               </button>
@@ -396,257 +376,232 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="grid grid-cols-4 gap-3">
-          <div className="rounded-[28px] bg-white p-4 shadow-sm">
-            <p className="text-base text-gray-500">今日營業額</p>
-            <p className="mt-2 text-4xl font-bold text-gray-900">${summary.revenue}</p>
-          </div>
-          <div className="rounded-[28px] bg-white p-4 shadow-sm">
-            <p className="text-base text-gray-500">今日來客數</p>
-            <p className="mt-2 text-4xl font-bold text-gray-900">{summary.guests} 人</p>
-          </div>
-          <div className="rounded-[28px] bg-white p-4 shadow-sm">
-            <p className="text-base text-gray-500">今日訂單數</p>
-            <p className="mt-2 text-4xl font-bold text-gray-900">{summary.orderCount} 張</p>
-          </div>
-          <div className="rounded-[28px] bg-white p-4 shadow-sm">
-            <p className="text-base text-gray-500">未結帳單數</p>
-            <p className="mt-2 text-4xl font-bold text-gray-900">{summary.unpaidCount} 張</p>
-          </div>
+        <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          {[
+            { label: "今日營業額", value: `$${summary.revenue}`, tone: "text-emerald-700" },
+            { label: "今日來客數", value: `${summary.guests} 人`, tone: "text-sky-700" },
+            { label: "今日訂單數", value: `${summary.orderCount} 張`, tone: "text-violet-700" },
+            { label: "未結帳單數", value: `${summary.unpaidCount} 張`, tone: "text-rose-700" },
+          ].map((item) => (
+            <div key={item.label} className="pos-panel rounded-[28px] px-4 py-4 lg:px-5">
+              <p className="text-sm text-slate-500">{item.label}</p>
+              <p className={`mt-3 text-3xl font-bold lg:text-4xl ${item.tone}`}>{item.value}</p>
+            </div>
+          ))}
         </section>
 
-        <div className="grid flex-1 gap-4 xl:min-h-0 xl:grid-cols-[1.45fr_0.78fr]">
-          <section className="rounded-[32px] bg-white p-5 shadow-sm xl:min-h-0 xl:overflow-hidden">
-            <div className="mb-4 flex items-start justify-between gap-4">
+        <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.45fr)_23rem] lg:gap-4">
+          <div className="pos-panel min-h-0 rounded-[32px] p-4 lg:p-5">
+            <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div>
-                <p className="text-base text-gray-500">目前狀態</p>
-                <p className="mt-1 text-4xl font-bold text-gray-900">
-                  {viewingSession
-                    ? `查看中：${formatSeatLabel(viewingSession.seatCodes)}`
-                    : selectedLabel}
-                </p>
+                <p className="text-sm font-medium text-slate-500">目前狀態</p>
+                <h2 className="mt-2 text-3xl font-bold text-slate-900 lg:text-4xl">
+                  {viewingSession ? `查看中：${formatSeatLabel(viewingSession.seatCodes)}` : selectedLabel}
+                </h2>
               </div>
 
-              <div className="flex flex-wrap items-center justify-end gap-2 text-sm">
-                <span className="rounded-full bg-red-100 px-4 py-2 font-semibold text-red-700">
+              <div className="flex flex-wrap gap-2 text-sm">
+                <span className="rounded-full bg-rose-100 px-4 py-2 font-semibold text-rose-700">
                   紅色 = 使用中
                 </span>
-                <span className="rounded-full bg-amber-100 px-4 py-2 font-semibold text-amber-700">
+                <span className="rounded-full bg-amber-100 px-4 py-2 font-semibold text-amber-800">
                   黃色 = 目前選取
                 </span>
-                <span className="rounded-full bg-blue-100 px-4 py-2 font-semibold text-blue-700">
+                <span className="rounded-full bg-sky-100 px-4 py-2 font-semibold text-sky-800">
                   藍色 = 查看中
                 </span>
               </div>
             </div>
 
-            <div className="grid h-[calc(100%-88px)] grid-rows-[auto_auto] gap-6">
-              <div>
+            <div className="grid h-[calc(100%-5.5rem)] min-h-0 gap-4 lg:grid-rows-[auto_minmax(0,1fr)]">
+              <section className="rounded-[28px] bg-slate-50/85 p-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-[34px] font-bold text-gray-900">桌位</h2>
-                  <p className="text-lg text-gray-500">單選</p>
+                  <div>
+                    <h3 className="text-2xl font-bold text-slate-900">桌位區</h3>
+                    <p className="text-sm text-slate-500">單選開單</p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-sm font-medium text-slate-500">
+                    4 桌
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-4 gap-3">
-                  {tables.map((table) => (
+                <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                  {TABLES.map((table) => (
                     <button
                       key={table}
                       type="button"
                       onClick={() => handleSelectTable(table)}
                       disabled={isLoadingOccupied}
-                      className={getTableClass(table)}
+                      className={getSeatClass(table, "table")}
                     >
-                      <div className="flex flex-col items-center gap-2">
-                        <span>{table}桌</span>
-                        {viewingSession?.seatCodes.includes(table) ? (
-                          <span className="text-base font-medium opacity-95">查看中</span>
-                        ) : isSeatOccupied(table) ? (
-                          <span className="text-base font-medium opacity-95">使用中</span>
-                        ) : (
-                          <span className="text-base font-medium opacity-70">可開單</span>
-                        )}
+                      <div className="space-y-2">
+                        <p className="text-3xl font-bold">{table}桌</p>
+                        <p className="text-sm font-medium opacity-85">
+                          {viewingSession?.seatCodes.includes(table)
+                            ? "查看中"
+                            : isSeatOccupied(table)
+                            ? "使用中"
+                            : "可開單"}
+                        </p>
                       </div>
                     </button>
                   ))}
                 </div>
-              </div>
+              </section>
 
-              <div className="min-h-0">
+              <section className="min-h-0 rounded-[28px] bg-slate-50/85 p-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-[34px] font-bold text-gray-900">吧檯座位</h2>
-                  <p className="text-lg text-gray-500">可複選</p>
+                  <div>
+                    <h3 className="text-2xl font-bold text-slate-900">吧檯座位</h3>
+                    <p className="text-sm text-slate-500">可複選開單</p>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-sm font-medium text-slate-500">
+                    7 位
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-7 gap-3">
-                  {barSeats.map((seat) => (
+                <div className="grid min-h-0 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
+                  {BAR_SEATS.map((seat) => (
                     <button
                       key={seat}
                       type="button"
                       onClick={() => handleSelectBarSeat(seat)}
                       disabled={isLoadingOccupied}
-                      className={getBarSeatClass(seat)}
+                      className={getSeatClass(seat, "bar")}
                     >
-                      <div className="flex flex-col items-center gap-1">
-                        <span>{seat}</span>
-                        {viewingSession?.seatCodes.includes(seat) ? (
-                          <span className="text-sm font-medium opacity-95">查看中</span>
-                        ) : isSeatOccupied(seat) ? (
-                          <span className="text-sm font-medium opacity-95">使用中</span>
-                        ) : (
-                          <span className="text-sm font-medium opacity-70">可開單</span>
-                        )}
+                      <div className="space-y-1">
+                        <p className="text-2xl font-bold">{seat}</p>
+                        <p className="text-sm font-medium opacity-85">
+                          {viewingSession?.seatCodes.includes(seat)
+                            ? "查看中"
+                            : isSeatOccupied(seat)
+                            ? "使用中"
+                            : "可開單"}
+                        </p>
                       </div>
                     </button>
                   ))}
                 </div>
-              </div>
+              </section>
             </div>
-          </section>
+          </div>
 
-          <aside className="flex min-h-0 flex-col gap-4">
-            <section className="flex-1 rounded-[32px] bg-white p-5 shadow-sm">
+          <aside className="flex min-h-0 flex-col gap-3 lg:gap-4">
+            <section className="pos-panel flex min-h-0 flex-1 flex-col rounded-[32px] p-4 lg:p-5">
               {viewingSession ? (
                 <>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-[34px] font-bold text-gray-900">既有主單資訊</h2>
-                      <p className="mt-1 text-base text-gray-500">點使用中的座位可快速查看</p>
+                      <p className="text-sm font-medium text-slate-500">使用中主單</p>
+                      <h2 className="mt-2 text-3xl font-bold text-slate-900">查看既有訂單</h2>
                     </div>
-
                     <button
                       type="button"
                       onClick={() => setViewingSession(null)}
-                      className="min-h-[48px] rounded-2xl bg-gray-100 px-4 text-base font-medium text-gray-700 hover:bg-gray-200"
+                      className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
                     >
                       關閉
                     </button>
                   </div>
 
-                  <div className="mt-6 space-y-5">
-                    <div className="rounded-2xl bg-gray-50 p-4">
-                      <p className="text-sm text-gray-500">主單編號</p>
-                      <p className="mt-2 text-2xl font-bold text-gray-900">
-                        {viewingSession.sessionNumber}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl bg-gray-50 p-4">
-                      <p className="text-sm text-gray-500">座位</p>
-                      <p className="mt-2 text-2xl font-bold text-gray-900">
-                        {formatSeatLabel(viewingSession.seatCodes)}
-                      </p>
-                    </div>
-
+                  <div className="pos-scroll mt-5 space-y-4 pr-1">
+                    <InfoCard label="主單編號" value={viewingSession.sessionNumber} />
+                    <InfoCard label="座位" value={formatSeatLabel(viewingSession.seatCodes)} />
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-2xl bg-gray-50 p-4">
-                        <p className="text-sm text-gray-500">來客數</p>
-                        <p className="mt-2 text-2xl font-bold text-gray-900">
-                          {viewingSession.guestCount} 人
-                        </p>
-                      </div>
-                      <div className="rounded-2xl bg-gray-50 p-4">
-                        <p className="text-sm text-gray-500">付款狀態</p>
-                        <p className="mt-2 text-2xl font-bold text-gray-900">
-                          {viewingSession.paymentStatus}
-                        </p>
-                      </div>
+                      <InfoCard label="來客數" value={`${viewingSession.guestCount} 人`} />
+                      <InfoCard label="付款狀態" value={viewingSession.paymentStatus} />
                     </div>
-
                     <button
                       onClick={() => router.push(`/session/${viewingSession.sessionId}`)}
-                      className="min-h-[64px] w-full rounded-2xl bg-blue-500 px-4 text-2xl font-bold text-white hover:bg-blue-600"
+                      className="min-h-[64px] w-full rounded-[24px] bg-sky-500 px-4 text-xl font-bold text-white transition hover:bg-sky-600"
                     >
                       進入訂單
                     </button>
-                  </div>
-                </>
-              ) : selectedSeats.length === 0 ? (
-                <>
-                  <h2 className="text-[34px] font-bold text-gray-900">開單面板</h2>
-                  <div className="mt-6 rounded-2xl bg-gray-100 p-5 text-xl text-gray-600">
-                    請先點選一個空位或空桌
                   </div>
                 </>
               ) : (
                 <>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-[34px] font-bold text-gray-900">開單面板</h2>
-                      <p className="mt-1 text-base text-gray-500">確認座位與來客數後開單</p>
+                      <p className="text-sm font-medium text-slate-500">開單區</p>
+                      <h2 className="mt-2 text-3xl font-bold text-slate-900">新單設定</h2>
+                      <p className="mt-2 text-sm text-slate-500">
+                        選擇座位後在這裡確認人數與建立訂單
+                      </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={resetOpenPanelState}
-                      className="min-h-[48px] rounded-2xl bg-gray-100 px-4 text-base font-medium text-gray-700 hover:bg-gray-200"
-                    >
-                      清除
-                    </button>
+                    {selectedSeats.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={resetOpenPanelState}
+                        className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+                      >
+                        清除
+                      </button>
+                    )}
                   </div>
 
-                  <div className="mt-6 space-y-5">
-                    <div className="rounded-2xl bg-gray-50 p-4">
-                      <p className="text-sm text-gray-500">目前座位</p>
-                      <p className="mt-2 text-3xl font-bold text-gray-900">{selectedLabel}</p>
-                    </div>
-
-                    <div className="rounded-2xl bg-gray-50 p-4">
-                      <p className="text-sm text-gray-500">座位類型</p>
-                      <p className="mt-2 text-2xl font-bold text-gray-900">{seatType}</p>
-                    </div>
-
-                    <div className="rounded-2xl border border-gray-200 p-4">
-                      <label
-                        htmlFor="guestCount"
-                        className="block text-base font-medium text-gray-700"
-                      >
+                  <div className="pos-scroll mt-5 space-y-4 pr-1">
+                    <InfoCard label="目前座位" value={selectedLabel} />
+                    <InfoCard label="座位類型" value={seatType} />
+                    <div className="rounded-[28px] border border-slate-200 bg-white p-4">
+                      <label htmlFor="guestCount" className="text-sm font-medium text-slate-500">
                         來客數
                       </label>
                       <input
                         id="guestCount"
                         type="number"
                         min={1}
-                        max={
-                          isBarSelection
-                            ? selectedSeats.length || 1
-                            : selectedSeats[0] === "B"
-                            ? 4
-                            : selectedSeats[0] === "E"
-                            ? 1
-                            : 2
-                        }
+                        max={selectionGuestLimit}
                         value={guestCount}
                         onChange={(e) => setGuestCount(Number(e.target.value))}
-                        className="mt-2 h-16 w-full rounded-2xl border border-gray-300 px-4 text-2xl outline-none focus:border-amber-500"
+                        disabled={selectedSeats.length === 0}
+                        className="mt-3 h-16 w-full rounded-2xl border border-slate-200 px-4 text-2xl font-bold text-slate-900 outline-none focus:border-amber-400 disabled:bg-slate-100"
                       />
-                      <p className="mt-3 text-sm text-gray-500">
+                      <p className="mt-3 text-sm text-slate-500">
                         {isBarSelection && `吧檯位已選 ${selectedSeats.length} 個座位`}
-                        {selectedSeats[0] === "B" && "B桌建議 2～4 人"}
+                        {selectedSeats[0] === "B" && "B桌建議 2 到 4 人"}
                         {(selectedSeats[0] === "C" || selectedSeats[0] === "D") &&
-                          "此桌建議 2 人"}
-                        {selectedSeats[0] === "E" && "此桌建議 1 人"}
+                          "C / D 桌建議 2 人"}
+                        {selectedSeats[0] === "E" && "E桌建議 1 人"}
+                        {selectedSeats.length === 0 && "請先點選左側座位"}
                       </p>
+                    </div>
+
+                    <div className="rounded-[28px] bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                      POS 操作建議：
+                      <br />
+                      桌位使用單選，吧檯可複選。點到紅色座位會直接切換成查看既有訂單。
                     </div>
                   </div>
                 </>
               )}
             </section>
 
-            {!viewingSession && selectedSeats.length > 0 && (
-              <section className="rounded-[32px] bg-white p-4 shadow-sm">
+            {!viewingSession && (
+              <section className="pos-panel rounded-[32px] p-4">
                 <button
                   type="button"
                   onClick={handleCreateOrder}
-                  disabled={isCreating || isLoadingOccupied}
-                  className="min-h-[72px] w-full rounded-2xl bg-amber-400 px-4 text-3xl font-bold text-gray-900 shadow transition hover:bg-amber-300 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={selectedSeats.length === 0 || isCreating || isLoadingOccupied}
+                  className="min-h-[72px] w-full rounded-[24px] bg-amber-400 px-4 text-2xl font-bold text-slate-900 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isCreating ? "建立中..." : "建立新單"}
                 </button>
               </section>
             )}
           </aside>
-        </div>
+        </section>
       </div>
     </main>
+  );
+}
+
+function InfoCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[28px] bg-slate-50 px-4 py-4">
+      <p className="text-sm text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+    </div>
   );
 }

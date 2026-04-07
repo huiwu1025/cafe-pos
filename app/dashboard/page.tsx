@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -76,11 +76,7 @@ export default function DashboardPage() {
   const [activeSessions, setActiveSessions] = useState<ActiveSessionCard[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
-
-  async function loadDashboard() {
+  const loadDashboard = useCallback(async () => {
     try {
       setIsLoading(true);
 
@@ -119,7 +115,6 @@ export default function DashboardPage() {
       if (activeSessionError) throw activeSessionError;
 
       const activeSessionIds = (activeSessionData ?? []).map((s) => s.id);
-
       let seatMap = new Map<string, string[]>();
 
       if (activeSessionIds.length > 0) {
@@ -134,7 +129,6 @@ export default function DashboardPage() {
           .in("session_id", activeSessionIds);
 
         if (seatError) throw seatError;
-
         seatMap = buildSeatMap((seatData ?? []) as SessionSeatRow[]);
       }
 
@@ -160,18 +154,20 @@ export default function DashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
 
   function getTodayStart() {
     const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    return start.toISOString();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
   }
 
   function getTomorrowStart() {
     const now = new Date();
-    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    return next.toISOString();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
   }
 
   function buildSeatMap(rows: SessionSeatRow[]) {
@@ -193,11 +189,9 @@ export default function DashboardPage() {
     return [...codes].sort((a, b) => {
       const aIsBar = a.startsWith("A");
       const bIsBar = b.startsWith("A");
-
       if (aIsBar && bIsBar) {
         return Number(a.replace("A", "")) - Number(b.replace("A", ""));
       }
-
       return a.localeCompare(b);
     });
   }
@@ -211,13 +205,9 @@ export default function DashboardPage() {
 
   function formatDateTime(value?: string | null) {
     if (!value) return "—";
-
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "—";
-
-    return date.toLocaleString("zh-TW", {
-      hour12: false,
-    });
+    return date.toLocaleString("zh-TW", { hour12: false });
   }
 
   const paidSessionsToday = useMemo(() => {
@@ -242,14 +232,10 @@ export default function DashboardPage() {
     return sessions.reduce((sum, session) => sum + Number(session.guest_count ?? 0), 0);
   }, [sessions]);
 
-  const todayOrderCount = useMemo(() => {
-    return sessions.length;
-  }, [sessions]);
-
   const avgTicket = useMemo(() => {
     if (paidSessionsToday.length === 0) return 0;
-    return todayRevenue / paidSessionsToday.length;
-  }, [paidSessionsToday, todayRevenue]);
+    return Math.round(todayRevenue / paidSessionsToday.length);
+  }, [paidSessionsToday.length, todayRevenue]);
 
   const todayTipTotal = useMemo(() => {
     return sessions.reduce((sum, session) => sum + Number(session.tip_amount ?? 0), 0);
@@ -292,15 +278,7 @@ export default function DashboardPage() {
 
   const topProducts = useMemo(() => {
     const paidSessionIds = new Set(paidSessionsToday.map((session) => session.id));
-
-    const map = new Map<
-      string,
-      {
-        product_name: string;
-        quantity: number;
-        revenue: number;
-      }
-    >();
+    const map = new Map<string, { product_name: string; quantity: number; revenue: number }>();
 
     for (const item of orderItems) {
       if (!paidSessionIds.has(item.session_id)) continue;
@@ -315,7 +293,6 @@ export default function DashboardPage() {
 
       existing.quantity += Number(item.quantity ?? 0);
       existing.revenue += Number(item.line_total ?? 0);
-
       map.set(item.product_name, existing);
     }
 
@@ -343,7 +320,6 @@ export default function DashboardPage() {
       if (Number.isNaN(date.getTime())) continue;
 
       const hour = date.getHours();
-
       let index = 0;
       if (hour >= 12 && hour < 14) index = 1;
       else if (hour >= 14 && hour < 16) index = 2;
@@ -352,7 +328,6 @@ export default function DashboardPage() {
 
       slots[index].orderCount += 1;
       slots[index].guestCount += Number(session.guest_count ?? 0);
-
       if (session.payment_status === "paid") {
         slots[index].revenue += Number(session.total_amount ?? 0);
       }
@@ -361,404 +336,278 @@ export default function DashboardPage() {
     return slots;
   }, [sessions]);
 
-  const maxTopProductQty = Math.max(...topProducts.map((item) => item.quantity), 1);
-  const maxTimeSlotRevenue = Math.max(...timeSlotStats.map((item) => item.revenue), 1);
-  const maxPaymentMethodCount = Math.max(...Object.values(paymentMethodStats), 1);
-
   if (isLoading) {
-    return <main className="p-8">載入中...</main>;
+    return <main className="pos-shell p-6 text-lg text-slate-600">載入中...</main>;
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <button
-          onClick={() => router.push("/")}
-          className="rounded-xl bg-gray-100 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-200"
-        >
-          ← 返回首頁
-        </button>
+    <main className="pos-shell p-3 md:p-4">
+      <div className="mx-auto flex h-full max-w-[1800px] flex-col gap-3 lg:gap-4">
+        <header className="pos-panel rounded-[30px] px-4 py-4 lg:px-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-emerald-700">
+                Live Dashboard
+              </p>
+              <h1 className="mt-2 text-3xl font-bold text-slate-900 lg:text-4xl">今日後台</h1>
+              <p className="mt-2 text-base text-slate-500">
+                每個面板各自滾動，主畫面維持固定高度
+              </p>
+            </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={() => router.push("/orders")}
-            className="rounded-xl bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 hover:bg-blue-200"
-          >
-            前往歷史訂單
-          </button>
-
-          <button
-            onClick={loadDashboard}
-            className="rounded-xl bg-amber-100 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-200"
-          >
-            重新整理
-          </button>
-        </div>
-      </div>
-
-      <section className="mb-6 rounded-2xl bg-white p-6 shadow-lg">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">今日即時後台</h1>
-            <p className="mt-1 text-gray-500">查看今天的營業額、來客數、熱門商品與現場狀態</p>
+            <div className="grid grid-cols-2 gap-2 lg:flex">
+              <button
+                onClick={() => router.push("/")}
+                className="min-h-[58px] rounded-2xl bg-slate-100 px-5 text-base font-semibold text-slate-800 transition hover:bg-slate-200"
+              >
+                返回座位
+              </button>
+              <button
+                onClick={() => router.push("/orders")}
+                className="min-h-[58px] rounded-2xl bg-sky-100 px-5 text-base font-semibold text-sky-900 transition hover:bg-sky-200"
+              >
+                歷史訂單
+              </button>
+              <button
+                onClick={loadDashboard}
+                className="min-h-[58px] rounded-2xl bg-amber-100 px-5 text-base font-semibold text-amber-900 transition hover:bg-amber-200"
+              >
+                重新整理
+              </button>
+            </div>
           </div>
+        </header>
 
-          <div className="text-sm text-gray-500">
-            更新時間：{new Date().toLocaleString("zh-TW", { hour12: false })}
-          </div>
-        </div>
+        <section className="grid grid-cols-2 gap-3 xl:grid-cols-6">
+          {[
+            { label: "今日營業額", value: `$${todayRevenue}`, tone: "text-emerald-700" },
+            { label: "來客數", value: `${todayGuestCount} 人`, tone: "text-sky-700" },
+            { label: "訂單數", value: `${sessions.length} 張`, tone: "text-violet-700" },
+            { label: "平均客單", value: `$${avgTicket}`, tone: "text-amber-700" },
+            { label: "未結帳", value: `${openSessionsToday.length} 張`, tone: "text-rose-700" },
+            { label: "招待總額", value: `$${todayComplimentaryTotal}`, tone: "text-orange-700" },
+          ].map((item) => (
+            <div key={item.label} className="pos-panel rounded-[28px] px-4 py-4 lg:px-5">
+              <p className="text-sm text-slate-500">{item.label}</p>
+              <p className={`mt-3 text-3xl font-bold ${item.tone}`}>{item.value}</p>
+            </div>
+          ))}
+        </section>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7">
-          <div className="rounded-2xl bg-emerald-50 p-5">
-            <p className="text-sm text-emerald-700">今日營業額</p>
-            <p className="mt-2 text-3xl font-bold text-emerald-900">${todayRevenue}</p>
-            <p className="mt-1 text-sm text-emerald-700">已付款訂單加總</p>
-          </div>
+        <section className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[1.15fr_0.85fr_0.85fr] 2xl:grid-cols-[1.2fr_0.8fr_0.8fr]">
+          <div className="grid min-h-0 gap-3 lg:grid-rows-2">
+            <Panel title="未結帳訂單" subtitle={`共 ${activeSessions.length} 張`}>
+              {activeSessions.length === 0 ? (
+                <EmptyState text="目前沒有未結帳訂單" />
+              ) : (
+                <div className="space-y-3">
+                  {activeSessions.map((session) => (
+                    <article
+                      key={session.id}
+                      className="rounded-[24px] border border-slate-200 bg-white p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-xl font-bold text-slate-900">
+                            {session.session_number}
+                          </h3>
+                          <p className="mt-1 text-sm text-slate-500">
+                            {formatDateTime(session.created_at)}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                          open
+                        </span>
+                      </div>
 
-          <div className="rounded-2xl bg-blue-50 p-5">
-            <p className="text-sm text-blue-700">今日來客數</p>
-            <p className="mt-2 text-3xl font-bold text-blue-900">{todayGuestCount} 人</p>
-            <p className="mt-1 text-sm text-blue-700">今天所有主單人數總和</p>
-          </div>
-
-          <div className="rounded-2xl bg-violet-50 p-5">
-            <p className="text-sm text-violet-700">今日訂單數</p>
-            <p className="mt-2 text-3xl font-bold text-violet-900">{todayOrderCount} 張</p>
-            <p className="mt-1 text-sm text-violet-700">包含已付款與未付款</p>
-          </div>
-
-          <div className="rounded-2xl bg-amber-50 p-5">
-            <p className="text-sm text-amber-700">平均客單價</p>
-            <p className="mt-2 text-3xl font-bold text-amber-900">
-              ${Math.round(avgTicket)}
-            </p>
-            <p className="mt-1 text-sm text-amber-700">營業額 ÷ 已付款訂單數</p>
-          </div>
-
-          <div className="rounded-2xl bg-rose-50 p-5">
-            <p className="text-sm text-rose-700">未結帳桌數</p>
-            <p className="mt-2 text-3xl font-bold text-rose-900">
-              {openSessionsToday.length} 張
-            </p>
-            <p className="mt-1 text-sm text-rose-700">目前 open + unpaid</p>
-          </div>
-
-          <div className="rounded-2xl bg-fuchsia-50 p-5">
-            <p className="text-sm text-fuchsia-700">今日小費總額</p>
-            <p className="mt-2 text-3xl font-bold text-fuchsia-900">${todayTipTotal}</p>
-            <p className="mt-1 text-sm text-fuchsia-700">今日所有主單小費加總</p>
-          </div>
-
-          <div className="rounded-2xl bg-orange-50 p-5">
-            <p className="text-sm text-orange-700">今日招待金額總額</p>
-            <p className="mt-2 text-3xl font-bold text-orange-900">
-              ${todayComplimentaryTotal}
-            </p>
-            <p className="mt-1 text-sm text-orange-700">招待品項原價加總</p>
-          </div>
-        </div>
-      </section>
-
-      <div className="grid grid-cols-12 gap-6">
-        <section className="col-span-12 rounded-2xl bg-white p-6 shadow-lg xl:col-span-7">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-900">目前未結帳訂單</h2>
-            <span className="text-sm text-gray-500">共 {activeSessions.length} 張</span>
-          </div>
-
-          <div className="mt-6 space-y-3">
-            {activeSessions.length === 0 ? (
-              <div className="rounded-xl bg-gray-50 p-5 text-gray-500">目前沒有未結帳訂單</div>
-            ) : (
-              activeSessions.map((session) => (
-                <div
-                  key={session.id}
-                  className="rounded-2xl border border-gray-200 bg-gray-50 p-4"
-                >
-                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                    <div className="space-y-1">
-                      <p className="text-lg font-bold text-gray-900">
-                        {session.session_number}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        座位：{formatSeatLabel(session.seat_codes)}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        來客數：{session.guest_count} 人
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        客群：{session.customer_type ?? "客人"}
-                        {session.customer_label ? ` / ${session.customer_label}` : ""}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        建立時間：{formatDateTime(session.created_at)}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <p className="text-sm text-gray-500">目前金額</p>
-                        <p className="text-2xl font-bold text-gray-900">
-                          ${Number(session.total_amount ?? 0)}
-                        </p>
+                      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                        <MiniMetric label="座位" value={formatSeatLabel(session.seat_codes)} />
+                        <MiniMetric label="來客數" value={`${session.guest_count} 人`} />
+                        <MiniMetric label="客群" value={session.customer_type ?? "客人"} />
+                        <MiniMetric
+                          label="金額"
+                          value={`$${Number(session.total_amount ?? 0)}`}
+                        />
                       </div>
 
                       <button
                         onClick={() => router.push(`/session/${session.id}`)}
-                        className="rounded-xl bg-blue-500 px-4 py-3 text-sm font-medium text-white hover:bg-blue-600"
+                        className="mt-4 w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-600"
                       >
                         進入訂單
                       </button>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="col-span-12 rounded-2xl bg-white p-6 shadow-lg xl:col-span-5">
-          <h2 className="text-2xl font-bold text-gray-900">客人類型分布</h2>
-
-          <div className="mt-6 space-y-4">
-            {Object.entries(customerTypeStats).map(([type, count]) => {
-              const percentage =
-                todayOrderCount === 0 ? 0 : Math.round((count / todayOrderCount) * 100);
-
-              return (
-                <div key={type}>
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span className="font-medium text-gray-700">{type}</span>
-                    <span className="text-gray-500">
-                      {count} 組 / {percentage}%
-                    </span>
-                  </div>
-
-                  <div className="h-3 w-full overflow-hidden rounded-full bg-gray-100">
-                    <div
-                      className="h-full rounded-full bg-amber-400"
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="col-span-12 rounded-2xl bg-white p-6 shadow-lg xl:col-span-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-900">付款方式分布</h2>
-            <span className="text-sm text-gray-500">今天所有主單</span>
-          </div>
-
-          <div className="mt-6 space-y-4">
-            {Object.keys(paymentMethodStats).length === 0 ? (
-              <div className="rounded-xl bg-gray-50 p-5 text-gray-500">今天還沒有付款方式資料</div>
-            ) : (
-              Object.entries(paymentMethodStats).map(([method, count]) => {
-                const width =
-                  maxPaymentMethodCount === 0
-                    ? "0%"
-                    : `${(count / maxPaymentMethodCount) * 100}%`;
-
-                return (
-                  <div key={method}>
-                    <div className="mb-2 flex items-center justify-between text-sm">
-                      <span className="font-medium text-gray-700">{method}</span>
-                      <span className="text-gray-500">{count} 筆</span>
-                    </div>
-
-                    <div className="h-4 w-full overflow-hidden rounded-full bg-gray-100">
-                      <div
-                        className="h-full rounded-full bg-indigo-500"
-                        style={{ width }}
-                      />
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </section>
-
-        <section className="col-span-12 rounded-2xl bg-white p-6 shadow-lg xl:col-span-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-900">今日熱門商品</h2>
-            <span className="text-sm text-gray-500">只計已付款且非招待品項</span>
-          </div>
-
-          <div className="mt-6 overflow-x-auto">
-            {topProducts.length === 0 ? (
-              <div className="rounded-xl bg-gray-50 p-5 text-gray-500">
-                今天還沒有已付款商品資料
-              </div>
-            ) : (
-              <table className="min-w-full border-separate border-spacing-y-3">
-                <thead>
-                  <tr className="text-left text-sm text-gray-500">
-                    <th className="px-4">排名</th>
-                    <th className="px-4">商品名稱</th>
-                    <th className="px-4">賣出杯數 / 份數</th>
-                    <th className="px-4">營收</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topProducts.map((product, index) => (
-                    <tr key={product.product_name} className="bg-gray-50">
-                      <td className="rounded-l-2xl px-4 py-4 font-bold text-gray-900">
-                        #{index + 1}
-                      </td>
-                      <td className="px-4 py-4 text-gray-900">{product.product_name}</td>
-                      <td className="px-4 py-4 text-gray-900">{product.quantity}</td>
-                      <td className="rounded-r-2xl px-4 py-4 font-bold text-gray-900">
-                        ${product.revenue}
-                      </td>
-                    </tr>
+                    </article>
                   ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </section>
+                </div>
+              )}
+            </Panel>
 
-        <section className="col-span-12 rounded-2xl bg-white p-6 shadow-lg xl:col-span-6">
-          <h2 className="text-2xl font-bold text-gray-900">今日摘要</h2>
-
-          <div className="mt-6 space-y-4 text-gray-700">
-            <div className="rounded-2xl bg-gray-50 p-4">
-              <p className="text-sm text-gray-500">已付款訂單</p>
-              <p className="mt-1 text-2xl font-bold text-gray-900">
-                {paidSessionsToday.length} 張
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-gray-50 p-4">
-              <p className="text-sm text-gray-500">未付款訂單</p>
-              <p className="mt-1 text-2xl font-bold text-gray-900">
-                {openSessionsToday.length} 張
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-gray-50 p-4">
-              <p className="text-sm text-gray-500">粉絲來店</p>
-              <p className="mt-1 text-2xl font-bold text-gray-900">
-                {customerTypeStats["粉絲"] ?? 0} 組
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-gray-50 p-4">
-              <p className="text-sm text-gray-500">熟客來店</p>
-              <p className="mt-1 text-2xl font-bold text-gray-900">
-                {customerTypeStats["熟客"] ?? 0} 組
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-gray-50 p-4">
-              <p className="text-sm text-gray-500">朋友來店</p>
-              <p className="mt-1 text-2xl font-bold text-gray-900">
-                {customerTypeStats["朋友"] ?? 0} 組
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="col-span-12 rounded-2xl bg-white p-6 shadow-lg">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-900">今日時段統計</h2>
-            <span className="text-sm text-gray-500">依建立訂單時間分段</span>
+            <Panel title="熱門商品" subtitle="只計已付款且非招待">
+              {topProducts.length === 0 ? (
+                <EmptyState text="今天還沒有商品資料" />
+              ) : (
+                <div className="space-y-3">
+                  {topProducts.map((product, index) => (
+                    <div key={product.product_name} className="rounded-[24px] bg-slate-50 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm text-slate-500">#{index + 1}</p>
+                          <p className="truncate text-lg font-bold text-slate-900">
+                            {product.product_name}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-slate-500">數量</p>
+                          <p className="text-lg font-bold text-slate-900">{product.quantity}</p>
+                        </div>
+                      </div>
+                      <p className="mt-3 text-sm font-medium text-emerald-700">
+                        營收 ${product.revenue}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Panel>
           </div>
 
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {timeSlotStats.map((slot) => (
-              <div key={slot.label} className="rounded-2xl bg-gray-50 p-5">
-                <p className="text-sm text-gray-500">{slot.label}</p>
-                <div className="mt-4 space-y-2">
-                  <p className="text-gray-700">
-                    訂單數：
-                    <span className="ml-2 font-bold text-gray-900">{slot.orderCount}</span>
-                  </p>
-                  <p className="text-gray-700">
-                    來客數：
-                    <span className="ml-2 font-bold text-gray-900">{slot.guestCount}</span>
-                  </p>
-                  <p className="text-gray-700">
-                    營業額：
-                    <span className="ml-2 font-bold text-gray-900">${slot.revenue}</span>
-                  </p>
+          <div className="grid min-h-0 gap-3 lg:grid-rows-[0.95fr_1.05fr]">
+            <Panel title="付款方式分布" subtitle={`更新於 ${new Date().toLocaleTimeString("zh-TW", { hour12: false })}`}>
+              <div className="space-y-4">
+                {Object.keys(paymentMethodStats).length === 0 ? (
+                  <EmptyState text="今天還沒有付款方式資料" />
+                ) : (
+                  Object.entries(paymentMethodStats).map(([method, count]) => {
+                    const width = `${(count / Math.max(...Object.values(paymentMethodStats), 1)) * 100}%`;
+
+                    return (
+                      <div key={method}>
+                        <div className="mb-2 flex items-center justify-between text-sm">
+                          <span className="font-medium text-slate-700">{method}</span>
+                          <span className="text-slate-500">{count} 筆</span>
+                        </div>
+                        <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-indigo-500"
+                            style={{ width }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </Panel>
+
+            <Panel title="客人類型分布" subtitle="依今日訂單統計">
+              <div className="space-y-4">
+                {Object.entries(customerTypeStats).map(([type, count]) => {
+                  const percentage =
+                    sessions.length === 0 ? 0 : Math.round((count / sessions.length) * 100);
+
+                  return (
+                    <div key={type}>
+                      <div className="mb-2 flex items-center justify-between text-sm">
+                        <span className="font-medium text-slate-700">{type}</span>
+                        <span className="text-slate-500">
+                          {count} 組 / {percentage}%
+                        </span>
+                      </div>
+                      <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className="h-full rounded-full bg-amber-400"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <MiniMetric label="今日小費" value={`$${todayTipTotal}`} />
+                  <MiniMetric label="已付款" value={`${paidSessionsToday.length} 張`} />
                 </div>
               </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="col-span-12 rounded-2xl bg-white p-6 shadow-lg xl:col-span-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-900">熱門商品圖表</h2>
-            <span className="text-sm text-gray-500">以賣出數量排序</span>
+            </Panel>
           </div>
 
-          <div className="mt-6 space-y-4">
-            {topProducts.length === 0 ? (
-              <div className="rounded-xl bg-gray-50 p-5 text-gray-500">
-                今天還沒有已付款商品資料
+          <div className="grid min-h-0 gap-3 lg:grid-rows-[0.9fr_1.1fr]">
+            <Panel title="時段營業統計" subtitle="依建立訂單時間分段">
+              <div className="space-y-3">
+                {timeSlotStats.map((slot) => (
+                  <div key={slot.label} className="rounded-[24px] bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-700">{slot.label}</p>
+                      <p className="text-sm text-slate-500">${slot.revenue}</p>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                      <MiniMetric label="訂單" value={`${slot.orderCount} 張`} />
+                      <MiniMetric label="來客" value={`${slot.guestCount} 人`} />
+                    </div>
+                  </div>
+                ))}
               </div>
-            ) : (
-              topProducts.map((product) => {
-                const width = `${(product.quantity / maxTopProductQty) * 100}%`;
+            </Panel>
 
-                return (
-                  <div key={product.product_name}>
-                    <div className="mb-2 flex items-center justify-between text-sm">
-                      <span className="font-medium text-gray-700">{product.product_name}</span>
-                      <span className="text-gray-500">{product.quantity} 份</span>
-                    </div>
-
-                    <div className="h-4 w-full overflow-hidden rounded-full bg-gray-100">
-                      <div
-                        className="h-full rounded-full bg-blue-500"
-                        style={{ width }}
-                      />
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </section>
-
-        <section className="col-span-12 rounded-2xl bg-white p-6 shadow-lg xl:col-span-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-900">時段營業額圖表</h2>
-            <span className="text-sm text-gray-500">以已付款營業額顯示</span>
-          </div>
-
-          <div className="mt-6 space-y-4">
-            {timeSlotStats.map((slot) => {
-              const width =
-                maxTimeSlotRevenue === 0
-                  ? "0%"
-                  : `${(slot.revenue / maxTimeSlotRevenue) * 100}%`;
-
-              return (
-                <div key={slot.label}>
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span className="font-medium text-gray-700">{slot.label}</span>
-                    <span className="text-gray-500">${slot.revenue}</span>
-                  </div>
-
-                  <div className="h-4 w-full overflow-hidden rounded-full bg-gray-100">
-                    <div
-                      className="h-full rounded-full bg-emerald-500"
-                      style={{ width }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+            <Panel title="快速摘要" subtitle="讓店內管理一眼可判斷">
+              <div className="grid gap-3">
+                <SummaryCard
+                  label="更新時間"
+                  value={new Date().toLocaleString("zh-TW", { hour12: false })}
+                />
+                <SummaryCard label="未結帳張數" value={`${openSessionsToday.length} 張`} />
+                <SummaryCard label="平均客單" value={`$${avgTicket}`} />
+                <SummaryCard label="最熱門商品" value={topProducts[0]?.product_name ?? "—"} />
+                <SummaryCard label="招待總額" value={`$${todayComplimentaryTotal}`} />
+              </div>
+            </Panel>
           </div>
         </section>
       </div>
     </main>
   );
+}
+
+function Panel({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="pos-panel flex min-h-0 flex-col rounded-[32px] p-4 lg:p-5">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">{title}</h2>
+          <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+        </div>
+      </div>
+      <div className="pos-scroll min-h-0 flex-1 pr-1">{children}</div>
+    </section>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-white px-3 py-3">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-2 text-base font-semibold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function SummaryCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[24px] bg-slate-50 px-4 py-4">
+      <p className="text-sm text-slate-500">{label}</p>
+      <p className="mt-2 text-xl font-bold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return <div className="rounded-[24px] bg-slate-50 p-5 text-slate-500">{text}</div>;
 }
