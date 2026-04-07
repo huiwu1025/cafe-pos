@@ -636,37 +636,37 @@ export default function SessionPage() {
   }, [orderItems, orderPage]);
 
   if (isLoading) {
-    return <main className="p-8">載入中...</main>;
+    return <main className="pos-shell p-8 text-slate-600">載入中...</main>;
   }
 
   if (!session) {
-    return <main className="p-8">找不到此訂單</main>;
+    return <main className="pos-shell p-8 text-slate-600">找不到此訂單</main>;
   }
 
   return (
     <>
       <main className="pos-shell bg-[#f6f6f3] p-3 md:p-4">
-        <div className="mx-auto max-w-[1800px] xl:h-[calc(100vh-24px)]">
-          <div className="mb-4 flex flex-col gap-3 rounded-3xl bg-white px-4 py-4 shadow-sm md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex h-full max-w-[1800px] flex-col gap-3">
+          <div className="pos-panel flex flex-col gap-3 rounded-[28px] px-4 py-3 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => router.push("/")}
-                className="min-h-[48px] rounded-2xl bg-gray-100 px-4 text-sm font-medium text-gray-800 hover:bg-gray-200 md:text-base"
+                className="h-11 rounded-2xl bg-gray-100 px-4 text-sm font-medium text-gray-800 hover:bg-gray-200 md:text-base"
               >
                 ← 返回座位
               </button>
 
-              <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
+              <div className="rounded-2xl bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
                 主單編號：
                 <span className="ml-1 font-semibold text-gray-900">{session.session_number}</span>
               </div>
 
-              <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
+              <div className="rounded-2xl bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
                 來客數：
                 <span className="ml-1 font-semibold text-gray-900">{session.guest_count} 人</span>
               </div>
 
-              <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
+              <div className="rounded-2xl bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
                 狀態：
                 <span className="ml-1 font-semibold text-gray-900">
                   {session.payment_status === "paid" ? "已結帳" : "處理中"}
@@ -678,20 +678,20 @@ export default function SessionPage() {
               type="button"
               onClick={handleDeleteSession}
               disabled={isDeletingSession}
-              className="min-h-[52px] rounded-2xl bg-red-100 px-5 text-base font-semibold text-red-700 hover:bg-red-200 disabled:opacity-60"
+              className="h-11 rounded-2xl bg-red-100 px-5 text-base font-semibold text-red-700 hover:bg-red-200 disabled:opacity-60"
             >
               {isDeletingSession ? "刪除中..." : "刪除訂單"}
             </button>
           </div>
 
-          <div className="grid gap-4 xl:h-[calc(100%-88px)] xl:grid-cols-[0.8fr_1.05fr_1.1fr]">
-            <section className="flex min-h-0 flex-col gap-4">
-              <div className="flex min-h-0 flex-col rounded-3xl bg-white p-4 shadow-sm">
-                <div className="mb-4">
+          <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[0.78fr_1fr_1.02fr]">
+            <section className="flex min-h-0 flex-col gap-3">
+              <div className="pos-panel flex min-h-0 flex-col rounded-[28px] p-4">
+                <div className="mb-3">
                   <h2 className="text-2xl font-bold text-gray-900">主單資訊</h2>
                 </div>
 
-                <div className="space-y-4 xl:min-h-0 xl:overflow-auto xl:pr-1">
+                <div className="pos-scroll space-y-4 lg:min-h-0 lg:pr-1">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-2xl bg-gray-50 p-4">
                       <p className="text-sm text-gray-500">訂單狀態</p>
@@ -856,19 +856,19 @@ export default function SessionPage() {
               </div>
             </section>
 
-            <section className="flex min-h-0 flex-col rounded-3xl bg-white p-4 shadow-sm">
-              <div className="mb-4 flex items-start justify-between gap-3">
+            <section className="pos-panel flex min-h-0 flex-col rounded-[28px] p-4">
+              <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900">商品點餐</h2>
                   <p className="mt-1 text-sm text-gray-500">固定卡片高度，不會因品名變形</p>
                 </div>
 
-                <div className="rounded-2xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                <div className="rounded-2xl bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
                   點一下直接加入
                 </div>
               </div>
 
-              <div className="mb-4 flex flex-wrap gap-2">
+              <div className="mb-3 flex flex-wrap gap-2">
                 {categoryTabs.map((tab) => (
                   <button
                     key={tab}
@@ -885,14 +885,14 @@ export default function SessionPage() {
                 ))}
               </div>
 
-              <div className="grid flex-1 auto-rows-[180px] grid-cols-2 gap-3 overflow-y-auto pr-1">
+              <div className="pos-scroll grid flex-1 auto-rows-[152px] grid-cols-2 gap-3 pr-1 lg:auto-rows-[160px]">
                 {displayedProducts.map((product) => (
                   <button
                     key={product.id}
                     type="button"
                     onClick={() => addOrderItem(product)}
                     disabled={isAdding || isLocked}
-                    className="flex h-[180px] flex-col justify-between rounded-3xl border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:bg-amber-50 hover:shadow-md active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex h-[152px] flex-col justify-between rounded-[24px] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:bg-amber-50 hover:shadow-md active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 lg:h-[160px]"
                   >
                     <div>
                       <p className="line-clamp-2 min-h-[56px] text-[20px] font-bold leading-snug text-gray-900">
@@ -907,7 +907,7 @@ export default function SessionPage() {
               </div>
             </section>
 
-            <section className="flex min-h-0 flex-col rounded-3xl bg-white shadow-sm xl:grid xl:grid-rows-[auto_minmax(0,1fr)_auto]">
+            <section className="pos-panel flex min-h-0 flex-col rounded-[28px] shadow-sm lg:grid lg:grid-rows-[auto_minmax(0,1fr)_auto]">
               <div className="border-b border-gray-100 px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -921,7 +921,7 @@ export default function SessionPage() {
                 </div>
               </div>
 
-              <div className="min-h-0 overflow-y-auto px-4 py-4">
+              <div className="pos-scroll min-h-0 px-4 py-4">
                 <div className="space-y-4">
                   {pagedOrderItems.length === 0 ? (
                     <div className="rounded-2xl bg-gray-100 p-5 text-base text-gray-500">
