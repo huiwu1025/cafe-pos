@@ -684,14 +684,14 @@ export default function SessionPage() {
             </button>
           </div>
 
-          <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[0.78fr_1fr_1.02fr]">
+          <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-[0.72fr_0.95fr_1.03fr]">
             <section className="flex min-h-0 flex-col gap-3">
               <div className="pos-panel flex min-h-0 flex-col rounded-[28px] p-4">
                 <div className="mb-3">
                   <h2 className="text-2xl font-bold text-gray-900">主單資訊</h2>
                 </div>
 
-                <div className="pos-scroll space-y-4 lg:min-h-0 lg:pr-1">
+                <div className="pos-scroll space-y-4 md:min-h-0 md:pr-1">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-2xl bg-gray-50 p-4">
                       <p className="text-sm text-gray-500">訂單狀態</p>
@@ -885,14 +885,14 @@ export default function SessionPage() {
                 ))}
               </div>
 
-              <div className="pos-scroll grid flex-1 auto-rows-[152px] grid-cols-2 gap-3 pr-1 lg:auto-rows-[160px]">
+              <div className="pos-scroll grid flex-1 auto-rows-[132px] grid-cols-2 gap-3 pr-1 md:auto-rows-[140px]">
                 {displayedProducts.map((product) => (
                   <button
                     key={product.id}
                     type="button"
                     onClick={() => addOrderItem(product)}
                     disabled={isAdding || isLocked}
-                    className="flex h-[152px] flex-col justify-between rounded-[24px] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:bg-amber-50 hover:shadow-md active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 lg:h-[160px]"
+                    className="flex h-[132px] flex-col justify-between rounded-[24px] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:bg-amber-50 hover:shadow-md active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 md:h-[140px]"
                   >
                     <div>
                       <p className="line-clamp-2 min-h-[56px] text-[20px] font-bold leading-snug text-gray-900">
@@ -907,7 +907,7 @@ export default function SessionPage() {
               </div>
             </section>
 
-            <section className="pos-panel flex min-h-0 flex-col rounded-[28px] shadow-sm lg:grid lg:grid-rows-[auto_minmax(0,1fr)_auto]">
+            <section className="pos-panel flex min-h-0 flex-col rounded-[28px] shadow-sm md:grid md:grid-rows-[auto_minmax(0,1fr)_auto]">
               <div className="border-b border-gray-100 px-4 py-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>

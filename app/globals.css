@@ -87,7 +87,7 @@ textarea {
   background: transparent;
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 900px) {
   .pos-shell {
     max-height: none;
     overflow: auto;
