@@ -858,8 +858,8 @@ export default function Home() {
               </section>
             </div>
           </section>
-          <aside className="flex min-h-0 flex-col gap-3">
-            <section className="pos-panel flex min-h-0 flex-1 flex-col rounded-[28px] p-3 lg:p-4">
+          <aside className="grid min-h-0 gap-3 pb-[calc(0.5rem+env(safe-area-inset-bottom))] lg:grid-rows-[minmax(0,1fr)_auto_220px]">
+            <section className="pos-panel flex min-h-0 flex-col overflow-hidden rounded-[28px] p-3 lg:p-4">
               {viewingSession ? (
                 <>
                   <div className="flex items-start justify-between gap-3">
@@ -1098,7 +1098,7 @@ export default function Home() {
               </section>
             )}
 
-            <section className="pos-panel flex min-h-0 flex-col rounded-[28px] p-3">
+            <section className="pos-panel flex min-h-0 flex-col overflow-hidden rounded-[28px] p-3">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">今日預約列表</h3>
