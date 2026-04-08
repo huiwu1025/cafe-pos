@@ -31,6 +31,14 @@ type DashboardSummary = {
   unpaidCount: number;
 };
 
+type BlacklistMatch = {
+  id: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  strike_count: number;
+  last_reason: string;
+};
+
 type OccupiedSeatMap = Record<string, SessionInfo>;
 type ReservedSeatMap = Record<string, ReservationInfo>;
 
@@ -83,6 +91,48 @@ function buildReservationLabel(name: string, phone: string) {
 
 function normalizeTimeLabel(value: string) {
   return String(value).slice(0, 5);
+}
+
+async function findBlacklistMatches(name: string, phone: string) {
+  const checks: PromiseLike<{ data: BlacklistMatch[] | null; error: unknown }>[] = [];
+
+  if (phone.trim()) {
+    checks.push(
+      supabase
+        .from("blacklist_customers")
+        .select("id, customer_name, customer_phone, strike_count, last_reason")
+        .eq("customer_phone", phone.trim())
+        .limit(1)
+    );
+  }
+
+  if (name.trim()) {
+    checks.push(
+      supabase
+        .from("blacklist_customers")
+        .select("id, customer_name, customer_phone, strike_count, last_reason")
+        .eq("customer_name", name.trim())
+        .limit(3)
+    );
+  }
+
+  if (checks.length === 0) return [];
+
+  const results = await Promise.all(checks);
+  const matches = new Map<string, BlacklistMatch>();
+
+  for (const result of results) {
+    const maybeError = result.error as { message?: string } | null;
+    if (maybeError?.message?.includes("blacklist_customers")) {
+      return [];
+    }
+    if (result.error) throw result.error;
+    for (const row of result.data ?? []) {
+      matches.set(row.id, row);
+    }
+  }
+
+  return Array.from(matches.values());
 }
 
 export default function Home() {
@@ -376,6 +426,19 @@ export default function Home() {
     }
     try {
       setIsCreatingReservation(true);
+      const blacklistMatches = await findBlacklistMatches(reservationName, reservationPhone);
+      if (blacklistMatches.length > 0) {
+        const labels = blacklistMatches
+          .map((item) => `${item.customer_name || "未填姓名"} / ${item.customer_phone || "未填電話"} / ${item.strike_count} 次`)
+          .join("\n");
+        const proceed = window.confirm(
+          `警告：此姓名或電話曾被列入黑名單。\n${labels}\n\n仍要建立這筆預約嗎？`
+        );
+        if (!proceed) {
+          setIsCreatingReservation(false);
+          return;
+        }
+      }
       const { data: reservationData, error: reservationError } = await supabase.from("reservations").insert({
         reservation_name: reservationName.trim(),
         reservation_phone: reservationPhone.trim(),
