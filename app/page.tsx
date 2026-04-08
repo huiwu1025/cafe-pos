@@ -624,7 +624,7 @@ export default function Home() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm text-slate-500">右側工作區</p>
-                        <h2 className="mt-1 text-2xl font-bold text-slate-900">{panelMode === "walkin" ? "新單設定" : "預約保留"}</h2>
+                        <h2 className="mt-1 text-xl font-bold text-slate-900">{panelMode === "walkin" ? "新單設定" : "預約保留"}</h2>
                         <p className="mt-1 text-xs text-slate-500">先選座位，再決定是現場開單還是預約保留</p>
                       </div>
                       {(selectedSeats.length > 0 || reservationName || reservationPhone || reservationNotes) && <button type="button" onClick={() => { resetSelectionState(); resetReservationForm(); }} className="h-10 rounded-2xl bg-slate-100 px-3 text-sm font-semibold text-slate-700">清空</button>}
@@ -632,10 +632,6 @@ export default function Home() {
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <button type="button" onClick={() => setPanelMode("walkin")} className={`h-11 rounded-2xl text-sm font-semibold ${panelMode === "walkin" ? "bg-amber-300 text-slate-900" : "bg-slate-100 text-slate-700"}`}>現場開單</button>
                       <button type="button" onClick={() => setPanelMode("reservation")} className={`h-11 rounded-2xl text-sm font-semibold ${panelMode === "reservation" ? "bg-fuchsia-200 text-fuchsia-900" : "bg-slate-100 text-slate-700"}`}>預約</button>
-                    </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <AsideCard label="目前座位" value={selectedLabel} />
-                      <AsideCard label="座位類型" value={seatType} />
                     </div>
                     <div className="mt-3 rounded-[22px] bg-slate-50 p-3">
                       <p className="text-sm text-slate-500">人數快速設定</p>
@@ -646,6 +642,10 @@ export default function Home() {
                         <button type="button" onClick={() => setGuestCount((prev) => Math.min(guestLimit, prev + 1))} disabled={selectedSeats.length === 0} className="h-11 rounded-2xl bg-slate-200 text-lg font-bold text-slate-800 disabled:opacity-50">+</button>
                       </div>
                       <p className="mt-2 text-xs text-slate-500">{selectedSeats.length === 0 && "請先選擇座位"}{isBarSelection && `吧檯最多 ${selectedSeats.length} 人`}{selectedSeats[0] === "B" && "B 桌可 1-4 人"}{(selectedSeats[0] === "C" || selectedSeats[0] === "D") && "C / D 桌可 1-2 人"}{selectedSeats[0] === "E" && "E 桌為單人座"}</p>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <AsideCard label="目前座位" value={selectedLabel} />
+                      <AsideCard label="座位類型" value={seatType} />
                     </div>
                   </>
                 )}
