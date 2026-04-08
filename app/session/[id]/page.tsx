@@ -124,6 +124,9 @@ export default function SessionPage() {
 
   const [amountReceivedInput, setAmountReceivedInput] = useState("");
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [showManualSurchargeModal, setShowManualSurchargeModal] = useState(false);
+  const [manualSurchargeAmount, setManualSurchargeAmount] = useState("");
+  const [manualSurchargeReason, setManualSurchargeReason] = useState("");
 
   const [activeCategory, setActiveCategory] = useState<string>("全部");
 
@@ -301,13 +304,7 @@ export default function SessionPage() {
   async function addManualSurcharge() {
     if (isLocked) return;
 
-    const reason = window.prompt("請輸入補價差原因", "");
-    if (reason === null) return;
-
-    const input = window.prompt("請輸入補價差金額", "0");
-    if (input === null) return;
-
-    const amount = Number(input.trim());
+    const amount = Number(manualSurchargeAmount.trim());
     if (!Number.isFinite(amount) || amount <= 0) {
       alert("請輸入大於 0 的金額");
       return;
@@ -325,7 +322,7 @@ export default function SessionPage() {
         quantity: 1,
         line_total: amount,
         note: "手動補價差",
-        custom_note: reason.trim(),
+        custom_note: manualSurchargeReason.trim(),
         status: "active",
         is_complimentary: false,
       });
@@ -335,6 +332,9 @@ export default function SessionPage() {
       await loadOrderItems();
       await refreshTotals();
       await loadSession();
+      setManualSurchargeAmount("");
+      setManualSurchargeReason("");
+      setShowManualSurchargeModal(false);
     } catch (error) {
       console.error("Failed to add manual surcharge", error);
       alert("新增補價差失敗");
@@ -721,6 +721,7 @@ export default function SessionPage() {
 
   const groupedProducts = useMemo(() => {
     return products.reduce<Record<string, Product[]>>((acc, product) => {
+      if (product.name === "補價差") return acc;
       const key = product.category || "未分類";
       if (!acc[key]) acc[key] = [];
       acc[key].push(product);
@@ -733,7 +734,9 @@ export default function SessionPage() {
   }, [groupedProducts]);
 
   const displayedProducts = useMemo(() => {
-    if (activeCategory === "全部") return products;
+    if (activeCategory === "全部") {
+      return products.filter((product) => product.name !== "補價差");
+    }
     return groupedProducts[activeCategory] ?? [];
   }, [activeCategory, groupedProducts, products]);
 
@@ -1027,7 +1030,7 @@ export default function SessionPage() {
 
                 <button
                   type="button"
-                  onClick={addManualSurcharge}
+                  onClick={() => setShowManualSurchargeModal(true)}
                   disabled={isAdding || isLocked}
                   className="flex h-[132px] flex-col justify-between rounded-[24px] border border-rose-200 bg-rose-50 p-4 text-left shadow-sm transition hover:bg-rose-100 hover:shadow-md active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 md:h-[140px]"
                 >
@@ -1316,6 +1319,65 @@ export default function SessionPage() {
                 className="min-h-[54px] rounded-2xl bg-emerald-500 px-4 text-base font-semibold text-white hover:bg-emerald-600 disabled:opacity-60"
               >
                 {isPaying ? "結帳中..." : "確認結帳"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showManualSurchargeModal && !isLocked && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+            <h3 className="text-2xl font-bold text-gray-900">新增補價差</h3>
+            <p className="mt-2 text-sm text-gray-500">
+              請輸入本次補價差金額與原因，確認後會直接加入目前訂單。
+            </p>
+
+            <div className="mt-6 space-y-4">
+              <label className="block">
+                <span className="text-sm font-medium text-gray-600">補價差金額</span>
+                <input
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={manualSurchargeAmount}
+                  onChange={(e) => setManualSurchargeAmount(e.target.value)}
+                  className="mt-2 h-12 w-full rounded-2xl border border-gray-300 px-4 text-base outline-none focus:border-rose-400"
+                  placeholder="例如：30"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-medium text-gray-600">補價差原因</span>
+                <textarea
+                  value={manualSurchargeReason}
+                  onChange={(e) => setManualSurchargeReason(e.target.value)}
+                  rows={3}
+                  className="mt-2 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm outline-none focus:border-rose-400"
+                  placeholder="例如：升級大杯、加料補差額、特殊客製"
+                />
+              </label>
+            </div>
+
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowManualSurchargeModal(false);
+                  setManualSurchargeAmount("");
+                  setManualSurchargeReason("");
+                }}
+                className="min-h-[54px] rounded-2xl bg-gray-100 px-4 text-base font-semibold text-gray-800 hover:bg-gray-200"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={addManualSurcharge}
+                disabled={isAdding}
+                className="min-h-[54px] rounded-2xl bg-rose-500 px-4 text-base font-semibold text-white hover:bg-rose-600 disabled:opacity-60"
+              >
+                {isAdding ? "新增中..." : "確認加入"}
               </button>
             </div>
           </div>
