@@ -145,6 +145,53 @@ export async function readSheetValues(title: string, spreadsheetId?: string) {
   }
 }
 
+export async function readSheetRange(title: string, range: string, spreadsheetId?: string) {
+  try {
+    const response = (await sheetsRequest(
+      `/values/${encodeURIComponent(`${title}!${range}`)}`,
+      undefined,
+      spreadsheetId
+    )) as { values?: string[][] };
+    return response.values ?? [];
+  } catch (error) {
+    const maybeMessage = error instanceof Error ? error.message : "";
+    if (maybeMessage.includes("Unable to parse range")) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+export async function replaceSheetRangeValues(
+  title: string,
+  clearRange: string,
+  startCell: string,
+  values: (string | number)[][],
+  spreadsheetId?: string
+) {
+  await ensureSheetExists(title, spreadsheetId);
+  await sheetsRequest(
+    `/values/${encodeURIComponent(`${title}!${clearRange}`)}:clear`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+    spreadsheetId
+  );
+
+  await sheetsRequest(
+    `/values/${encodeURIComponent(`${title}!${startCell}`)}?valueInputOption=USER_ENTERED`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        majorDimension: "ROWS",
+        values,
+      }),
+    },
+    spreadsheetId
+  );
+}
+
 export async function replaceSheetValues(title: string, values: (string | number)[][], spreadsheetId?: string) {
   await ensureSheetExists(title, spreadsheetId);
   await sheetsRequest(`/values/${encodeURIComponent(`${title}!A:ZZ`)}:clear`, {
