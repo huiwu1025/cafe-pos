@@ -53,12 +53,18 @@ type CashCountRow = {
   id: string;
   business_date: string;
   opening_cash: number | null;
+  opening_breakdown?: Record<string, number> | null;
   opening_notes: string | null;
   opening_counted_at: string | null;
   closing_cash: number | null;
+  closing_breakdown?: Record<string, number> | null;
   closing_notes: string | null;
   closing_counted_at: string | null;
 };
+
+type CashBreakdown = Record<string, number>;
+
+const CASH_DENOMINATIONS = [1000, 500, 100, 50, 10, 5, 1];
 
 function todayIsoDate() {
   const now = new Date();
@@ -93,6 +99,34 @@ function formatDateTime(value: string | null | undefined) {
   ).padStart(2, "0")}`;
 }
 
+function createEmptyBreakdown(): CashBreakdown {
+  return Object.fromEntries(CASH_DENOMINATIONS.map((denomination) => [String(denomination), 0]));
+}
+
+function normalizeBreakdown(input: Record<string, unknown> | null | undefined): CashBreakdown {
+  const next = createEmptyBreakdown();
+
+  for (const denomination of CASH_DENOMINATIONS) {
+    const key = String(denomination);
+    const rawValue = input?.[key];
+    const numericValue =
+      typeof rawValue === "number"
+        ? rawValue
+        : typeof rawValue === "string"
+          ? Number(rawValue)
+          : 0;
+    next[key] = Number.isFinite(numericValue) && numericValue > 0 ? Math.floor(numericValue) : 0;
+  }
+
+  return next;
+}
+
+function calculateBreakdownTotal(breakdown: CashBreakdown) {
+  return CASH_DENOMINATIONS.reduce((sum, denomination) => {
+    return sum + denomination * Number(breakdown[String(denomination)] ?? 0);
+  }, 0);
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"overview" | "cash">("overview");
@@ -100,9 +134,9 @@ export default function DashboardPage() {
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSessionCard[]>([]);
   const [cashCount, setCashCount] = useState<CashCountRow | null>(null);
-  const [openingCashInput, setOpeningCashInput] = useState("");
+  const [openingBreakdown, setOpeningBreakdown] = useState<CashBreakdown>(createEmptyBreakdown);
   const [openingNotesInput, setOpeningNotesInput] = useState("");
-  const [closingCashInput, setClosingCashInput] = useState("");
+  const [closingBreakdown, setClosingBreakdown] = useState<CashBreakdown>(createEmptyBreakdown);
   const [closingNotesInput, setClosingNotesInput] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingOpening, setIsSavingOpening] = useState(false);
@@ -200,9 +234,9 @@ export default function DashboardPage() {
         }))
       );
       setCashCount(cashData ?? null);
-      setOpeningCashInput(cashData?.opening_cash != null ? String(cashData.opening_cash) : "");
+      setOpeningBreakdown(normalizeBreakdown(cashData?.opening_breakdown));
       setOpeningNotesInput(cashData?.opening_notes ?? "");
-      setClosingCashInput(cashData?.closing_cash != null ? String(cashData.closing_cash) : "");
+      setClosingBreakdown(normalizeBreakdown(cashData?.closing_breakdown));
       setClosingNotesInput(cashData?.closing_notes ?? "");
     } catch (error) {
       console.error("Failed to load dashboard", error);
@@ -310,10 +344,21 @@ export default function DashboardPage() {
     }, 0);
   }, [paidSessions]);
 
+  const openingCountedTotal = useMemo(
+    () => calculateBreakdownTotal(openingBreakdown),
+    [openingBreakdown]
+  );
+
+  const closingCountedTotal = useMemo(
+    () => calculateBreakdownTotal(closingBreakdown),
+    [closingBreakdown]
+  );
+
   const expectedClosingCash = useMemo(() => {
-    const openingCash = Number(cashCount?.opening_cash ?? 0);
+    const openingCash =
+      cashCount?.opening_cash != null ? Number(cashCount.opening_cash) : openingCountedTotal;
     return openingCash + cashPaidTotal;
-  }, [cashCount?.opening_cash, cashPaidTotal]);
+  }, [cashCount?.opening_cash, cashPaidTotal, openingCountedTotal]);
 
   const closingDifference = useMemo(() => {
     if (cashCount?.closing_cash == null) return null;
@@ -322,7 +367,7 @@ export default function DashboardPage() {
 
   async function saveCashCount(mode: "opening" | "closing") {
     const businessDate = todayIsoDate();
-    const cashValue = Number(mode === "opening" ? openingCashInput : closingCashInput);
+    const cashValue = mode === "opening" ? openingCountedTotal : closingCountedTotal;
     const notesValue = mode === "opening" ? openingNotesInput.trim() : closingNotesInput.trim();
 
     if (!Number.isFinite(cashValue) || cashValue < 0) {
@@ -339,12 +384,14 @@ export default function DashboardPage() {
           ? {
               business_date: businessDate,
               opening_cash: cashValue,
+              opening_breakdown: openingBreakdown,
               opening_notes: notesValue || null,
               opening_counted_at: new Date().toISOString(),
             }
           : {
               business_date: businessDate,
               closing_cash: cashValue,
+              closing_breakdown: closingBreakdown,
               closing_notes: notesValue || null,
               closing_counted_at: new Date().toISOString(),
             };
@@ -549,32 +596,32 @@ export default function DashboardPage() {
             <Panel title="開店與關帳現金">
               <div className="space-y-3">
                 <div className="grid gap-3 lg:grid-cols-2">
-                  <CashSummaryCard label="開店現金" value={cashCount?.opening_cash != null ? `$${cashCount.opening_cash}` : "尚未清點"} note={formatDateTime(cashCount?.opening_counted_at)} />
-                  <CashSummaryCard label="關帳現金" value={cashCount?.closing_cash != null ? `$${cashCount.closing_cash}` : "尚未清點"} note={formatDateTime(cashCount?.closing_counted_at)} />
+                  <CashSummaryCard label="開店現金" value={cashCount?.opening_cash != null ? `$${cashCount.opening_cash}` : `$${openingCountedTotal}`} note={formatDateTime(cashCount?.opening_counted_at)} />
+                  <CashSummaryCard label="關帳現金" value={cashCount?.closing_cash != null ? `$${cashCount.closing_cash}` : `$${closingCountedTotal}`} note={formatDateTime(cashCount?.closing_counted_at)} />
                 </div>
 
                 <div className="grid gap-3 lg:grid-cols-2">
                   <CashEntryCard
                     title="開店現金清點"
-                    amount={openingCashInput}
+                    breakdown={openingBreakdown}
                     notes={openingNotesInput}
-                    amountLabel="開店現金"
                     notesLabel="開店備註"
+                    totalLabel={`合計 $${openingCountedTotal}`}
                     buttonLabel={isSavingOpening ? "儲存中..." : "儲存開店現金"}
                     disabled={isSavingOpening}
-                    onAmountChange={setOpeningCashInput}
+                    onBreakdownChange={setOpeningBreakdown}
                     onNotesChange={setOpeningNotesInput}
                     onSubmit={() => saveCashCount("opening")}
                   />
                   <CashEntryCard
                     title="關帳現金清點"
-                    amount={closingCashInput}
+                    breakdown={closingBreakdown}
                     notes={closingNotesInput}
-                    amountLabel="關帳現金"
                     notesLabel="關帳備註"
+                    totalLabel={`合計 $${closingCountedTotal}`}
                     buttonLabel={isSavingClosing ? "儲存中..." : "儲存關帳現金"}
                     disabled={isSavingClosing}
-                    onAmountChange={setClosingCashInput}
+                    onBreakdownChange={setClosingBreakdown}
                     onNotesChange={setClosingNotesInput}
                     onSubmit={() => saveCashCount("closing")}
                   />
@@ -676,42 +723,60 @@ function CashSummaryCard({
 
 function CashEntryCard({
   title,
-  amount,
+  breakdown,
   notes,
-  amountLabel,
   notesLabel,
+  totalLabel,
   buttonLabel,
   disabled,
-  onAmountChange,
+  onBreakdownChange,
   onNotesChange,
   onSubmit,
 }: {
   title: string;
-  amount: string;
+  breakdown: CashBreakdown;
   notes: string;
-  amountLabel: string;
   notesLabel: string;
+  totalLabel: string;
   buttonLabel: string;
   disabled: boolean;
-  onAmountChange: (value: string) => void;
+  onBreakdownChange: (value: CashBreakdown) => void;
   onNotesChange: (value: string) => void;
   onSubmit: () => void;
 }) {
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white p-4">
       <h3 className="text-lg font-bold text-slate-900">{title}</h3>
-      <label className="mt-4 block">
-        <span className="text-sm text-slate-500">{amountLabel}</span>
-        <input
-          type="number"
-          min="0"
-          inputMode="numeric"
-          value={amount}
-          onChange={(event) => onAmountChange(event.target.value)}
-          className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white"
-          placeholder="輸入金額"
-        />
-      </label>
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {CASH_DENOMINATIONS.map((denomination) => {
+          const key = String(denomination);
+          const count = breakdown[key] ?? 0;
+          return (
+            <label key={key} className="block rounded-2xl bg-slate-50 p-3">
+              <span className="text-sm font-semibold text-slate-700">${denomination}</span>
+              <input
+                type="number"
+                min="0"
+                inputMode="numeric"
+                value={count === 0 ? "" : String(count)}
+                onChange={(event) => {
+                  const numericValue = Math.max(0, Math.floor(Number(event.target.value || 0)));
+                  onBreakdownChange({
+                    ...breakdown,
+                    [key]: Number.isFinite(numericValue) ? numericValue : 0,
+                  });
+                }}
+                className="mt-2 h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none transition focus:border-amber-400"
+                placeholder="0"
+              />
+              <p className="mt-2 text-xs text-slate-500">小計 ${denomination * count}</p>
+            </label>
+          );
+        })}
+      </div>
+      <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3">
+        <p className="text-sm text-amber-800">{totalLabel}</p>
+      </div>
       <label className="mt-3 block">
         <span className="text-sm text-slate-500">{notesLabel}</span>
         <textarea
