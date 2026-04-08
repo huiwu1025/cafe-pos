@@ -114,19 +114,8 @@ export default function Home() {
     if (selectedSeats[0] === "C" || selectedSeats[0] === "D") return 2;
     return 1;
   }, [isBarSelection, selectedSeats]);
-  const guestPresets = useMemo(() => Array.from({ length: guestLimit }, (_, index) => index + 1), [guestLimit]);
   const selectedLabel = useMemo(() => formatSeatLabel(selectedSeats), [selectedSeats]);
   const seatType = useMemo(() => (selectedSeats.length === 0 ? "未選擇" : isBarSelection ? "吧檯座位" : "桌位"), [isBarSelection, selectedSeats]);
-  const todayReservations = useMemo(() => {
-    const map = new Map<string, ReservationInfo>();
-    for (const reservation of Object.values(reservedSeats)) map.set(reservation.reservationId, reservation);
-    return Array.from(map.values()).sort((a, b) => {
-      const timeCompare = a.reservationTime.localeCompare(b.reservationTime);
-      if (timeCompare !== 0) return timeCompare;
-      return a.reservationName.localeCompare(b.reservationName);
-    });
-  }, [reservedSeats]);
-
   const statItems = [
     { label: "今日營業額", value: `$${summary.revenue}`, tone: "text-emerald-700" },
     { label: "今日來客數", value: `${summary.guests} 人`, tone: "text-sky-700" },
@@ -497,7 +486,8 @@ export default function Home() {
                   <p className="text-sm text-slate-500">把主要空間留給座位與預約操作</p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2 lg:flex lg:shrink-0">
+              <div className="grid grid-cols-3 gap-2 lg:flex lg:shrink-0">
+                <button onClick={() => router.push("/reservations")} className="h-11 rounded-2xl bg-fuchsia-100 px-4 text-sm font-semibold text-fuchsia-900 hover:bg-fuchsia-200">今日預約</button>
                 <button onClick={() => router.push("/orders")} className="h-11 rounded-2xl bg-sky-100 px-4 text-sm font-semibold text-sky-900 hover:bg-sky-200">歷史訂單</button>
                 <button onClick={() => router.push("/dashboard")} className="h-11 rounded-2xl bg-emerald-100 px-4 text-sm font-semibold text-emerald-900 hover:bg-emerald-200">今日後台</button>
               </div>
@@ -635,10 +625,11 @@ export default function Home() {
                     </div>
                     <div className="mt-3 rounded-[22px] bg-slate-50 p-3">
                       <p className="text-sm text-slate-500">人數快速設定</p>
-                      <p className="mt-1 text-base font-semibold text-slate-900">目前 {guestCount} 人</p>
-                      <div className="mt-3 grid grid-cols-4 gap-2">
+                      <div className="mt-3 grid grid-cols-[52px_minmax(0,1fr)_52px] gap-2">
                         <button type="button" onClick={() => setGuestCount((prev) => Math.max(1, prev - 1))} disabled={selectedSeats.length === 0} className="h-11 rounded-2xl bg-slate-200 text-lg font-bold text-slate-800 disabled:opacity-50">-</button>
-                        {guestPresets.map((count) => <button key={count} type="button" onClick={() => setGuestCount(count)} disabled={selectedSeats.length === 0} className={`h-11 rounded-2xl text-sm font-semibold disabled:opacity-50 ${guestCount === count ? "bg-amber-300 text-slate-900" : "bg-white text-slate-700 ring-1 ring-slate-200"}`}>{count} 人</button>)}
+                        <div className="flex h-11 items-center justify-center rounded-2xl bg-white text-base font-bold text-slate-900 ring-1 ring-slate-200">
+                          {guestCount}
+                        </div>
                         <button type="button" onClick={() => setGuestCount((prev) => Math.min(guestLimit, prev + 1))} disabled={selectedSeats.length === 0} className="h-11 rounded-2xl bg-slate-200 text-lg font-bold text-slate-800 disabled:opacity-50">+</button>
                       </div>
                       <p className="mt-2 text-xs text-slate-500">{selectedSeats.length === 0 && "請先選擇座位"}{isBarSelection && `吧檯最多 ${selectedSeats.length} 人`}{selectedSeats[0] === "B" && "B 桌可 1-4 人"}{(selectedSeats[0] === "C" || selectedSeats[0] === "D") && "C / D 桌可 1-2 人"}{selectedSeats[0] === "E" && "E 桌為單人座"}</p>
@@ -654,37 +645,6 @@ export default function Home() {
               {!viewingSession && (
                 <>
                   {!viewingReservation && <section className="pos-panel rounded-[28px] p-3">{panelMode === "walkin" ? <button type="button" onClick={handleCreateOrder} disabled={selectedSeats.length === 0 || isCreatingOrder || isLoadingSeats} className="h-14 w-full rounded-[22px] bg-amber-400 text-lg font-bold text-slate-900 hover:bg-amber-300 disabled:opacity-50">{isCreatingOrder ? "建立中..." : "建立新單"}</button> : <button type="button" onClick={openReservationModal} disabled={selectedSeats.length === 0} className="h-14 w-full rounded-[22px] bg-fuchsia-500 text-lg font-bold text-white hover:bg-fuchsia-600 disabled:opacity-50">預約並鎖位</button>}</section>}
-                  {!viewingReservation && (
-                    <section className="pos-panel flex min-h-0 flex-col overflow-hidden rounded-[28px] p-3">
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <div>
-                          <h3 className="text-lg font-bold text-slate-900">今日預約列表</h3>
-                          <p className="text-xs text-slate-500">可直接查看、取消或標記逾時</p>
-                        </div>
-                        <span className="rounded-full bg-fuchsia-100 px-3 py-1 text-xs font-semibold text-fuchsia-800">{todayReservations.length} 筆</span>
-                      </div>
-                      <div className="pos-scroll min-h-0 space-y-2 pr-1">
-                        {todayReservations.length === 0 ? <div className="rounded-[22px] bg-slate-50 p-4 text-sm text-slate-500">今日尚無預約</div> : todayReservations.map((reservation) => (
-                          <div key={reservation.reservationId} className="rounded-[22px] border border-slate-200 bg-slate-50 p-3">
-                            <button type="button" onClick={() => setViewingReservation(reservation)} className="w-full text-left">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="text-sm font-semibold text-slate-900">{reservation.reservationTime} {reservation.reservationName}</p>
-                                  <p className="mt-1 text-xs text-slate-500">{formatSeatLabel(reservation.seatCodes)} / {reservation.guestCount} 人</p>
-                                  <p className="mt-1 text-xs text-slate-500">{reservation.reservationPhone}</p>
-                                </div>
-                                <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600">{reservation.reservationCode}</span>
-                              </div>
-                            </button>
-                            <div className="mt-3 grid grid-cols-2 gap-2">
-                              <button type="button" onClick={() => updateReservationStatus(reservation, "cancelled")} className="h-9 rounded-2xl bg-rose-100 px-3 text-xs font-semibold text-rose-800 hover:bg-rose-200">取消</button>
-                              <button type="button" onClick={() => updateReservationStatus(reservation, "no_show")} className="h-9 rounded-2xl bg-slate-200 px-3 text-xs font-semibold text-slate-800 hover:bg-slate-300">逾時</button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  )}
                 </>
               )}
             </aside>
