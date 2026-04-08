@@ -592,7 +592,7 @@ export default function DashboardPage() {
             </Panel>
           </section>
         ) : (
-          <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[1.05fr_0.95fr]">
+          <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[1.32fr_0.68fr]">
             <Panel title="開店與關帳現金">
               <div className="space-y-3">
                 <div className="grid gap-3 lg:grid-cols-2">
@@ -747,7 +747,7 @@ function CashEntryCard({
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white p-4">
       <h3 className="text-lg font-bold text-slate-900">{title}</h3>
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         {CASH_DENOMINATIONS.map((denomination) => {
           const key = String(denomination);
           const count = breakdown[key] ?? 0;
@@ -766,7 +766,7 @@ function CashEntryCard({
                     [key]: Number.isFinite(numericValue) ? numericValue : 0,
                   });
                 }}
-                className="mt-2 h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none transition focus:border-amber-400"
+                className="mt-2 h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-center text-lg font-semibold tabular-nums text-slate-900 outline-none transition focus:border-amber-400"
                 placeholder="0"
               />
               <p className="mt-2 text-xs text-slate-500">小計 ${denomination * count}</p>
