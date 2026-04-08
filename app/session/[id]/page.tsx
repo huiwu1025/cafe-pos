@@ -1098,7 +1098,7 @@ export default function SessionPage() {
                 </div>
               </div>
 
-              <div className="rounded-b-3xl border-t border-gray-200 bg-white p-4">
+              <div className="rounded-b-3xl border-t border-gray-200 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm text-gray-700">
                     <span>餐點小計</span>
