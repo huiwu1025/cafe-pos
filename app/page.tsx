@@ -876,7 +876,7 @@ export default function Home() {
                     </button>
                   </div>
 
-                  <div className="mt-3 space-y-3">
+                  <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3">
                     <AsideCard label="主單編號" value={viewingSession.sessionNumber} />
                     <AsideCard label="座位" value={formatSeatLabel(viewingSession.seatCodes)} />
                     <div className="grid grid-cols-2 gap-2">
@@ -885,7 +885,7 @@ export default function Home() {
                     </div>
                     <button
                       onClick={() => router.push(`/session/${viewingSession.sessionId}`)}
-                      className="h-14 w-full rounded-[22px] bg-sky-500 text-lg font-bold text-white hover:bg-sky-600"
+                      className="mt-auto h-14 w-full rounded-[22px] bg-sky-500 text-lg font-bold text-white hover:bg-sky-600"
                     >
                       進入主單
                     </button>
@@ -907,7 +907,7 @@ export default function Home() {
                     </button>
                   </div>
 
-                  <div className="mt-3 space-y-3">
+                  <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3">
                     <AsideCard label="預約編號" value={viewingReservation.reservationCode} />
                     <AsideCard label="預約姓名" value={viewingReservation.reservationName} />
                     <AsideCard label="預約電話" value={viewingReservation.reservationPhone} />
@@ -937,7 +937,7 @@ export default function Home() {
                       type="button"
                       onClick={handleConvertReservationToSession}
                       disabled={isConvertingReservation}
-                      className="h-14 w-full rounded-[22px] bg-emerald-500 text-lg font-bold text-white hover:bg-emerald-600 disabled:opacity-60"
+                      className="mt-auto h-14 w-full rounded-[22px] bg-emerald-500 text-lg font-bold text-white hover:bg-emerald-600 disabled:opacity-60"
                     >
                       {isConvertingReservation ? "轉單中..." : "客到轉開單"}
                     </button>
@@ -953,6 +953,9 @@ export default function Home() {
                       </h2>
                       <p className="mt-1 text-xs text-slate-500">
                         先選座位，再決定是現場開單還是預約保留
+                      </p>
+                      <p className="mt-1 text-xs font-medium text-slate-600">
+                        B 桌可 1-4 人，C / D 桌可 1-2 人，E 桌為單人座。
                       </p>
                     </div>
                     {(selectedSeats.length > 0 || reservationName || reservationPhone || reservationNotes) && (
@@ -1024,7 +1027,16 @@ export default function Home() {
                     </div>
 
                     {panelMode === "reservation" && (
-                      <div className="space-y-3 rounded-[24px] bg-slate-50 p-3">
+                      <div className="space-y-3 rounded-[24px] border border-fuchsia-200 bg-fuchsia-50 p-3">
+                        <div className="rounded-[18px] bg-white/80 px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fuchsia-700">
+                            Step 1
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">先填預約資料</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            姓名、電話、日期、時間填完後，再按下方按鈕鎖位。
+                          </p>
+                        </div>
                         <InputField
                           id="reservationName"
                           label="預約姓名"
@@ -1071,6 +1083,32 @@ export default function Home() {
 
             {!viewingSession && !viewingReservation && (
               <section className="pos-panel rounded-[28px] p-3">
+                <div className="mb-3 rounded-[20px] bg-slate-50 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-slate-500">人數快速設定</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">目前 {guestCount} 人</p>
+                    </div>
+                    <input
+                      type="number"
+                      min={1}
+                      max={guestLimit}
+                      value={guestCount}
+                      onChange={(e) =>
+                        setGuestCount(Math.max(1, Math.min(guestLimit, Number(e.target.value) || 1)))
+                      }
+                      disabled={selectedSeats.length === 0}
+                      className="h-11 w-24 rounded-2xl border border-slate-200 bg-white px-3 text-center text-base font-bold text-slate-900 outline-none focus:border-amber-400 disabled:bg-slate-100"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {selectedSeats.length === 0 && "請先選擇座位"}
+                    {isBarSelection && `吧檯最多 ${selectedSeats.length} 人`}
+                    {selectedSeats[0] === "B" && "B 桌可 1-4 人"}
+                    {(selectedSeats[0] === "C" || selectedSeats[0] === "D") && "C / D 桌可 1-2 人"}
+                    {selectedSeats[0] === "E" && "E 桌為單人座"}
+                  </p>
+                </div>
                 {panelMode === "walkin" ? (
                   <button
                     type="button"
@@ -1081,6 +1119,10 @@ export default function Home() {
                     {isCreating ? "建立中..." : "建立新單"}
                   </button>
                 ) : (
+                  <div className="space-y-2">
+                    <div className="rounded-[18px] bg-fuchsia-50 px-3 py-2 text-xs text-fuchsia-800">
+                      Step 2：確認上方資料後，再按這裡建立預約並鎖位。
+                    </div>
                   <button
                     type="button"
                     onClick={handleCreateReservation}
@@ -1094,6 +1136,7 @@ export default function Home() {
                   >
                     {isCreatingReservation ? "預約建立中..." : "建立預約並鎖位"}
                   </button>
+                  </div>
                 )}
               </section>
             )}
