@@ -23,6 +23,15 @@
 # misc
 .DS_Store
 *.pem
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!next-env.d.ts
+!vercel.json
+!eslint.config.mjs
+!postcss.config.mjs
+!next.config.ts
 
 # debug
 npm-debug.log*

@@ -19,6 +19,10 @@ function getGoogleConfig() {
   };
 }
 
+function resolveSpreadsheetId(spreadsheetId?: string) {
+  return spreadsheetId ?? getGoogleConfig().spreadsheetId;
+}
+
 function base64UrlEncode(input: string | Buffer) {
   return Buffer.from(input)
     .toString("base64")
@@ -72,10 +76,10 @@ async function getGoogleAccessToken() {
   return data.access_token;
 }
 
-async function sheetsRequest(path: string, init?: RequestInit) {
-  const { spreadsheetId } = getGoogleConfig();
+async function sheetsRequest(path: string, init?: RequestInit, spreadsheetId?: string) {
+  const targetSpreadsheetId = resolveSpreadsheetId(spreadsheetId);
   const accessToken = await getGoogleAccessToken();
-  const response = await fetch(`${GOOGLE_SHEETS_API_BASE}/${spreadsheetId}${path}`, {
+  const response = await fetch(`${GOOGLE_SHEETS_API_BASE}/${targetSpreadsheetId}${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -94,12 +98,18 @@ async function sheetsRequest(path: string, init?: RequestInit) {
   return response.json();
 }
 
-export async function ensureSheetExists(title: string) {
-  const metadata = (await sheetsRequest("?fields=sheets.properties.title")) as {
+export async function listSheetTitles(spreadsheetId?: string) {
+  const metadata = (await sheetsRequest("?fields=sheets.properties.title", undefined, spreadsheetId)) as {
     sheets?: { properties?: { title?: string } }[];
   };
 
-  const exists = metadata.sheets?.some((sheet) => sheet.properties?.title === title);
+  return metadata.sheets?.map((sheet) => sheet.properties?.title).filter(Boolean) as string[];
+}
+
+export async function ensureSheetExists(title: string, spreadsheetId?: string) {
+  const titles = await listSheetTitles(spreadsheetId);
+  const exists = titles.includes(title);
+
   if (exists) return;
 
   await sheetsRequest(":batchUpdate", {
@@ -115,13 +125,15 @@ export async function ensureSheetExists(title: string) {
         },
       ],
     }),
-  });
+  }, spreadsheetId);
 }
 
-export async function readSheetValues(title: string) {
+export async function readSheetValues(title: string, spreadsheetId?: string) {
   try {
     const response = (await sheetsRequest(
-      `/values/${encodeURIComponent(`${title}!A:ZZ`)}`
+      `/values/${encodeURIComponent(`${title}!A:ZZ`)}`,
+      undefined,
+      spreadsheetId
     )) as { values?: string[][] };
     return response.values ?? [];
   } catch (error) {
@@ -133,12 +145,12 @@ export async function readSheetValues(title: string) {
   }
 }
 
-export async function replaceSheetValues(title: string, values: (string | number)[][]) {
-  await ensureSheetExists(title);
+export async function replaceSheetValues(title: string, values: (string | number)[][], spreadsheetId?: string) {
+  await ensureSheetExists(title, spreadsheetId);
   await sheetsRequest(`/values/${encodeURIComponent(`${title}!A:ZZ`)}:clear`, {
     method: "POST",
     body: JSON.stringify({}),
-  });
+  }, spreadsheetId);
 
   await sheetsRequest(`/values/${encodeURIComponent(`${title}!A1`)}?valueInputOption=USER_ENTERED`, {
     method: "PUT",
@@ -146,16 +158,17 @@ export async function replaceSheetValues(title: string, values: (string | number
       majorDimension: "ROWS",
       values,
     }),
-  });
+  }, spreadsheetId);
 }
 
 export async function mergeRowsByKey(
   title: string,
   headers: string[],
-  rows: (string | number)[][]
+  rows: (string | number)[][],
+  spreadsheetId?: string
 ) {
-  await ensureSheetExists(title);
-  const existing = await readSheetValues(title);
+  await ensureSheetExists(title, spreadsheetId);
+  const existing = await readSheetValues(title, spreadsheetId);
   const existingRows = existing.slice(1);
   const merged = new Map<string, (string | number)[]>();
 
@@ -170,5 +183,5 @@ export async function mergeRowsByKey(
   }
 
   const nextValues = [headers, ...Array.from(merged.values())];
-  await replaceSheetValues(title, nextValues);
+  await replaceSheetValues(title, nextValues, spreadsheetId);
 }
