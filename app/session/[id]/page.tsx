@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -33,7 +33,7 @@ type Product = {
 type OrderItem = {
   id: string;
   session_id: string;
-  product_id: string;
+  product_id: string | null;
   product_name: string;
   unit_price: number;
   quantity: number;
@@ -268,6 +268,47 @@ export default function SessionPage() {
   function buildSpecNote() {
     const extrasText = selectedExtras.length > 0 ? ` / ${selectedExtras.join("、")}` : "";
     return `${selectedTemp} / ${selectedSugar}${extrasText}`;
+  }
+
+  async function addManualSurcharge() {
+    if (isLocked) return;
+
+    const input = window.prompt("請輸入補價差金額", "0");
+    if (input === null) return;
+
+    const amount = Number(input.trim());
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert("請輸入大於 0 的金額");
+      return;
+    }
+
+    try {
+      setIsAdding(true);
+
+      const { error } = await supabase.from("order_items").insert({
+        session_id: sessionId,
+        product_id: null,
+        product_name: "補價差",
+        unit_price: amount,
+        quantity: 1,
+        line_total: amount,
+        note: "手動補價差",
+        custom_note: "",
+        status: "active",
+        is_complimentary: false,
+      });
+
+      if (error) throw error;
+
+      await loadOrderItems();
+      await refreshTotals();
+      await loadSession();
+    } catch (error) {
+      console.error("Failed to add manual surcharge", error);
+      alert("新增補價差失敗");
+    } finally {
+      setIsAdding(false);
+    }
   }
 
   async function addOrderItem(product: Product) {
@@ -933,6 +974,22 @@ export default function SessionPage() {
               </div>
 
               <div className="pos-scroll grid flex-1 auto-rows-[132px] grid-cols-2 gap-3 pr-1 md:auto-rows-[140px]">
+                <button
+                  type="button"
+                  onClick={addManualSurcharge}
+                  disabled={isAdding || isLocked}
+                  className="flex h-[132px] flex-col justify-between rounded-[24px] border border-rose-200 bg-rose-50 p-4 text-left shadow-sm transition hover:bg-rose-100 hover:shadow-md active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 md:h-[140px]"
+                >
+                  <div>
+                    <p className="line-clamp-2 min-h-[56px] text-[20px] font-bold leading-snug text-gray-900">
+                      補價差
+                    </p>
+                    <p className="mt-1 text-sm text-gray-500">手動輸入金額</p>
+                  </div>
+
+                  <p className="text-xl font-semibold text-rose-600">自行輸入</p>
+                </button>
+
                 {displayedProducts.map((product) => (
                   <button
                     key={product.id}
