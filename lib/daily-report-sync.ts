@@ -52,12 +52,27 @@ type ProductCostItem = {
   notes: string;
 };
 
+type FixedExpenseSummary = {
+  total: number;
+  detectedHeaders: string[];
+};
+
+const TAIPEI_TIMEZONE = "Asia/Taipei";
+const PRODUCT_COST_SHEET = "品項成本表";
+const FIXED_EXPENSE_SHEET = "固定與其他支出";
+
 function todayIsoDate() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = `${now.getMonth() + 1}`.padStart(2, "0");
-  const day = `${now.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return formatBusinessDate(new Date());
+}
+
+function formatBusinessDate(value: Date | string) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TAIPEI_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
 function getSupabaseServerClient() {
@@ -124,21 +139,61 @@ function calculatePaymentFee(amount: number, paymentMethod: string | null | unde
   return 0;
 }
 
-async function loadProductCosts() {
+function summarizeFixedExpenses(rows: string[][]): FixedExpenseSummary {
+  const headerRowIndex = rows.findIndex((row) =>
+    row.some((cell) => ["金額", "支出金額", "費用", "支出", "成本"].includes(String(cell).trim()))
+  );
+
+  if (headerRowIndex < 0) {
+    return {
+      total: 0,
+      detectedHeaders: [],
+    };
+  }
+
+  const headers = rows[headerRowIndex];
+  const amountIndexes = headers
+    .map((header, index) => ({ header: String(header).trim(), index }))
+    .filter((item) =>
+      ["金額", "支出金額", "費用", "支出", "成本"].some((keyword) => item.header.includes(keyword))
+    );
+
+  let total = 0;
+  for (const row of rows.slice(headerRowIndex + 1)) {
+    if (row.every((cell) => String(cell ?? "").trim() === "")) continue;
+    for (const item of amountIndexes) {
+      total += toNumber(row[item.index]);
+    }
+  }
+
+  return {
+    total,
+    detectedHeaders: amountIndexes.map((item) => item.header),
+  };
+}
+
+async function loadSourceCostData() {
   const sourceSpreadsheetId = getCostSpreadsheetId();
   if (!sourceSpreadsheetId) {
     return {
       sourceSpreadsheetId: "",
       productCosts: [] as ProductCostItem[],
       fixedExpenseRows: [] as string[][],
+      fixedExpenseSummary: { total: 0, detectedHeaders: [] as string[] },
       availableSheets: [] as string[],
     };
   }
 
   const availableSheets = await listSheetTitles(sourceSpreadsheetId);
+  const productCostRows = await readSheetValues(PRODUCT_COST_SHEET, sourceSpreadsheetId);
+  const fixedExpenseRows = await readSheetValues(FIXED_EXPENSE_SHEET, sourceSpreadsheetId);
+  const productHeaderIndex = findHeaderRowIndex(productCostRows, [
+    "品項名稱",
+    "類別",
+    "售價",
+    "單位成本",
+  ]);
 
-  const productCostRows = await readSheetValues("品項成本表", sourceSpreadsheetId);
-  const productHeaderIndex = findHeaderRowIndex(productCostRows, ["品項名稱", "類別", "售價", "單位成本"]);
   const productCosts: ProductCostItem[] = [];
 
   if (productHeaderIndex >= 0) {
@@ -160,30 +215,19 @@ async function loadProductCosts() {
     }
   }
 
-  const fixedExpenseRows = await readSheetValues("固定與其他支出", sourceSpreadsheetId);
-
   return {
     sourceSpreadsheetId,
     productCosts,
     fixedExpenseRows,
+    fixedExpenseSummary: summarizeFixedExpenses(fixedExpenseRows),
     availableSheets,
   };
 }
 
-export async function syncTodayDashboardToGoogleSheets() {
-  const supabase = getSupabaseServerClient();
-  const businessDate = todayIsoDate();
-
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const tomorrowStart = new Date(todayStart);
-  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-
+async function loadAllSessionsAndItems(supabase: ReturnType<typeof getSupabaseServerClient>) {
   const { data: sessionsData, error: sessionsError } = await supabase
     .from("dining_sessions")
     .select("*")
-    .gte("created_at", todayStart.toISOString())
-    .lt("created_at", tomorrowStart.toISOString())
     .order("created_at", { ascending: true });
 
   if (sessionsError) throw sessionsError;
@@ -202,6 +246,91 @@ export async function syncTodayDashboardToGoogleSheets() {
     orderItems = (orderItemsData ?? []) as OrderItemRow[];
   }
 
+  return { sessions, orderItems };
+}
+
+function buildPaymentSummary(sessions: SessionRow[]) {
+  const summary = new Map<
+    string,
+    { count: number; grossAmount: number; feeAmount: number; netAmount: number }
+  >();
+
+  for (const session of sessions) {
+    const method = session.payment_method?.trim() || "未填付款方式";
+    const grossAmount = Number(session.total_amount ?? 0);
+    const feeAmount = calculatePaymentFee(grossAmount, method);
+    const existing = summary.get(method) ?? {
+      count: 0,
+      grossAmount: 0,
+      feeAmount: 0,
+      netAmount: 0,
+    };
+
+    existing.count += 1;
+    existing.grossAmount += grossAmount;
+    existing.feeAmount += feeAmount;
+    existing.netAmount += grossAmount - feeAmount;
+    summary.set(method, existing);
+  }
+
+  return summary;
+}
+
+function buildItemProfitSummary(orderItems: OrderItemRow[], productCosts: ProductCostItem[]) {
+  const productCostMap = new Map(productCosts.map((item) => [normalizeProductName(item.name), item]));
+  const summary = new Map<
+    string,
+    {
+      category: string;
+      quantity: number;
+      salesAmount: number;
+      unitCost: number;
+      estimatedCost: number;
+      grossProfit: number;
+      grossMargin: number | string;
+      notes: string;
+    }
+  >();
+
+  for (const item of orderItems.filter((entry) => entry.status === "active")) {
+    const productName = normalizeProductName(item.product_name ?? "");
+    if (!productName) continue;
+
+    const costInfo = productCostMap.get(productName);
+    const quantity = Number(item.quantity ?? 0);
+    const salesAmount = Number(item.line_total ?? 0);
+    const estimatedCost = quantity * Number(costInfo?.unitCost ?? 0);
+    const grossProfit = salesAmount - estimatedCost;
+
+    const existing = summary.get(productName) ?? {
+      category: costInfo?.category ?? "",
+      quantity: 0,
+      salesAmount: 0,
+      unitCost: Number(costInfo?.unitCost ?? 0),
+      estimatedCost: 0,
+      grossProfit: 0,
+      grossMargin: costInfo?.grossMargin ?? "",
+      notes: costInfo?.notes ?? "",
+    };
+
+    existing.quantity += quantity;
+    existing.salesAmount += salesAmount;
+    existing.estimatedCost += estimatedCost;
+    existing.grossProfit += grossProfit;
+    summary.set(productName, existing);
+  }
+
+  return summary;
+}
+
+export async function syncTodayDashboardToGoogleSheets() {
+  const supabase = getSupabaseServerClient();
+  const businessDate = todayIsoDate();
+  const { sessions: allSessions, orderItems: allOrderItems } = await loadAllSessionsAndItems(supabase);
+
+  const sessions = allSessions.filter((session) => formatBusinessDate(session.created_at ?? "") === businessDate);
+  const orderItems = allOrderItems.filter((item) => sessions.some((session) => session.id === item.session_id));
+
   let cashCount: CashCountRow | null = null;
   const { data: cashData, error: cashError } = await supabase
     .from("daily_cash_counts")
@@ -211,15 +340,13 @@ export async function syncTodayDashboardToGoogleSheets() {
 
   if (cashError) {
     const maybeMessage = (cashError as { message?: string }).message ?? "";
-    if (!maybeMessage.includes("daily_cash_counts")) {
-      throw cashError;
-    }
+    if (!maybeMessage.includes("daily_cash_counts")) throw cashError;
   } else {
     cashCount = cashData as CashCountRow | null;
   }
 
-  const { productCosts, fixedExpenseRows, availableSheets } = await loadProductCosts();
-  const productCostMap = new Map(productCosts.map((item) => [normalizeProductName(item.name), item]));
+  const { productCosts, fixedExpenseRows, fixedExpenseSummary, availableSheets } =
+    await loadSourceCostData();
 
   const paidSessions = sessions.filter((session) => session.payment_status === "paid");
   const unpaidSessions = sessions.filter((session) => session.payment_status !== "paid");
@@ -239,71 +366,38 @@ export async function syncTodayDashboardToGoogleSheets() {
   const closingDifference =
     cashCount?.closing_cash != null ? Number(cashCount.closing_cash) - expectedClosingCash : "";
 
-  const paymentSummary = new Map<
-    string,
-    { count: number; grossAmount: number; feeAmount: number; netAmount: number }
-  >();
-
-  for (const session of paidSessions) {
-    const method = session.payment_method?.trim() || "未填付款方式";
-    const grossAmount = Number(session.total_amount ?? 0);
-    const feeAmount = calculatePaymentFee(grossAmount, method);
-    const existing = paymentSummary.get(method) ?? {
-      count: 0,
-      grossAmount: 0,
-      feeAmount: 0,
-      netAmount: 0,
-    };
-    existing.count += 1;
-    existing.grossAmount += grossAmount;
-    existing.feeAmount += feeAmount;
-    existing.netAmount += grossAmount - feeAmount;
-    paymentSummary.set(method, existing);
-  }
-
+  const paymentSummary = buildPaymentSummary(paidSessions);
   const totalPaymentFees = Array.from(paymentSummary.values()).reduce(
     (sum, item) => sum + item.feeAmount,
     0
   );
   const netRevenue = revenue - totalPaymentFees;
 
-  const activeOrderItems = orderItems.filter((item) => item.status === "active");
-  const itemProfitSummary = new Map<
-    string,
-    { category: string; quantity: number; salesAmount: number; unitCost: number; estimatedCost: number; grossProfit: number; grossMargin: number | string; notes: string }
-  >();
-
-  for (const item of activeOrderItems) {
-    const productName = normalizeProductName(item.product_name ?? "");
-    if (!productName) continue;
-    const productCost = productCostMap.get(productName);
-    const quantity = Number(item.quantity ?? 0);
-    const salesAmount = Number(item.line_total ?? 0);
-    const estimatedCost = quantity * Number(productCost?.unitCost ?? 0);
-    const grossProfit = salesAmount - estimatedCost;
-    const existing = itemProfitSummary.get(productName) ?? {
-      category: productCost?.category ?? "",
-      quantity: 0,
-      salesAmount: 0,
-      unitCost: Number(productCost?.unitCost ?? 0),
-      estimatedCost: 0,
-      grossProfit: 0,
-      grossMargin: productCost?.grossMargin ?? "",
-      notes: productCost?.notes ?? "",
-    };
-    existing.quantity += quantity;
-    existing.salesAmount += salesAmount;
-    existing.estimatedCost += estimatedCost;
-    existing.grossProfit += grossProfit;
-    itemProfitSummary.set(productName, existing);
-  }
-
+  const itemProfitSummary = buildItemProfitSummary(orderItems, productCosts);
   const totalEstimatedCost = Array.from(itemProfitSummary.values()).reduce(
     (sum, item) => sum + item.estimatedCost,
     0
   );
   const grossProfitAfterCost = revenue - totalEstimatedCost;
   const grossMarginAfterCost = revenue > 0 ? grossProfitAfterCost / revenue : "";
+
+  const allPaidSessions = allSessions.filter((session) => session.payment_status === "paid");
+  const allRevenue = allPaidSessions.reduce((sum, session) => sum + Number(session.total_amount ?? 0), 0);
+  const allGuests = allSessions.reduce((sum, session) => sum + Number(session.guest_count ?? 0), 0);
+  const allPaymentSummary = buildPaymentSummary(allPaidSessions);
+  const allPaymentFees = Array.from(allPaymentSummary.values()).reduce(
+    (sum, item) => sum + item.feeAmount,
+    0
+  );
+  const allNetRevenue = allRevenue - allPaymentFees;
+  const allItemProfitSummary = buildItemProfitSummary(allOrderItems, productCosts);
+  const allEstimatedCost = Array.from(allItemProfitSummary.values()).reduce(
+    (sum, item) => sum + item.estimatedCost,
+    0
+  );
+  const allGrossProfit = allRevenue - allEstimatedCost;
+  const cumulativeProfit = allNetRevenue - fixedExpenseSummary.total - allEstimatedCost;
+  const allGrossMargin = allRevenue > 0 ? allGrossProfit / allRevenue : "";
 
   await mergeRowsByKey(
     "每日摘要",
@@ -419,40 +513,34 @@ export async function syncTodayDashboardToGoogleSheets() {
     ])
   );
 
-  await replaceSheetValues(
-    "品項成本",
-    [
-      ["品項名稱", "類別", "售價", "單位成本", "單杯/份毛利", "單杯/份毛利率", "是否主打", "備註"],
-      ...productCosts.map((item) => [
-        item.name,
-        item.category,
-        item.price,
-        item.unitCost,
-        item.grossProfit,
-        item.grossMargin,
-        item.featured,
-        item.notes,
-      ]),
-    ]
-  );
+  await replaceSheetValues("品項成本", [
+    ["品項名稱", "類別", "售價", "單位成本", "單杯/份毛利", "單杯/份毛利率", "是否主打", "備註"],
+    ...productCosts.map((item) => [
+      item.name,
+      item.category,
+      item.price,
+      item.unitCost,
+      item.grossProfit,
+      item.grossMargin,
+      item.featured,
+      item.notes,
+    ]),
+  ]);
 
-  await replaceSheetValues(
-    "品項毛利",
-    [
-      ["品項名稱", "類別", "今日售出杯數", "今日銷售額", "單位成本", "估算總成本", "估算毛利", "參考毛利率", "備註"],
-      ...Array.from(itemProfitSummary.entries()).map(([productName, item]) => [
-        productName,
-        item.category,
-        item.quantity,
-        item.salesAmount,
-        item.unitCost,
-        item.estimatedCost,
-        item.grossProfit,
-        item.grossMargin,
-        item.notes,
-      ]),
-    ]
-  );
+  await replaceSheetValues("品項毛利", [
+    ["品項名稱", "類別", "今日售出杯數", "今日銷售額", "單位成本", "估算總成本", "估算毛利", "參考毛利率", "備註"],
+    ...Array.from(itemProfitSummary.entries()).map(([productName, item]) => [
+      productName,
+      item.category,
+      item.quantity,
+      item.salesAmount,
+      item.unitCost,
+      item.estimatedCost,
+      item.grossProfit,
+      item.grossMargin,
+      item.notes,
+    ]),
+  ]);
 
   await mergeRowsByKey(
     "每日毛利",
@@ -481,35 +569,47 @@ export async function syncTodayDashboardToGoogleSheets() {
   );
 
   if (fixedExpenseRows.length > 0) {
-    const nonEmptyRows = fixedExpenseRows.filter((row) => row.some((cell) => String(cell ?? "").trim() !== ""));
+    const nonEmptyRows = fixedExpenseRows.filter((row) =>
+      row.some((cell) => String(cell ?? "").trim() !== "")
+    );
     if (nonEmptyRows.length > 0) {
       await replaceSheetValues("固定支出", nonEmptyRows);
     }
   }
 
-  await replaceSheetValues(
-    "付款方式淨收入",
-    [
-      ["付款方式", "今日筆數", "今日收款", "手續費", "淨收入"],
-      ...Array.from(paymentSummary.entries()).map(([method, item]) => [
-        method,
-        item.count,
-        item.grossAmount,
-        item.feeAmount,
-        item.netAmount,
-      ]),
-    ]
-  );
+  await replaceSheetValues("付款方式淨收入", [
+    ["付款方式", "今日筆數", "今日收款", "手續費", "淨收入"],
+    ...Array.from(paymentSummary.entries()).map(([method, item]) => [
+      method,
+      item.count,
+      item.grossAmount,
+      item.feeAmount,
+      item.netAmount,
+    ]),
+  ]);
 
-  await replaceSheetValues(
-    "成本同步說明",
-    [
-      ["項目", "內容"],
-      ["來源試算表", getCostSpreadsheetId() || "尚未設定 GOOGLE_COST_SOURCE_SPREADSHEET_ID"],
-      ["已掃描分頁", availableSheets.join("、") || "未提供來源成本表"],
-      ["目前手續費規則", "歐付寶 2.45% / 每筆最低 1 元；現金與其他先視為 0 元"],
-    ]
-  );
+  await replaceSheetValues("累積損益", [
+    ["項目", "數值"],
+    ["累積營業收入", allRevenue],
+    ["累積金流手續費", allPaymentFees],
+    ["累積淨收入", allNetRevenue],
+    ["累積估算餐點成本", allEstimatedCost],
+    ["累積固定支出", fixedExpenseSummary.total],
+    ["累積估算毛利", allGrossProfit],
+    ["累積損益", cumulativeProfit],
+    ["累積訂單數", allSessions.length],
+    ["累積來客數", allGuests],
+    ["累積毛利率", allGrossMargin === "" ? "" : allGrossMargin],
+    ["來源成本欄位", fixedExpenseSummary.detectedHeaders.join("、") || "未偵測到金額欄位"],
+    ["同步時間", new Date().toISOString()],
+  ]);
+
+  await replaceSheetValues("成本同步說明", [
+    ["項目", "內容"],
+    ["來源試算表", getCostSpreadsheetId() || "尚未設定 GOOGLE_COST_SOURCE_SPREADSHEET_ID"],
+    ["已掃描分頁", availableSheets.join("、") || "未提供來源成本表"],
+    ["目前手續費規則", "歐付寶 2.45% / 每筆最低 1 元；現金與其他先視為 0 元"],
+  ]);
 
   return {
     businessDate,
@@ -520,5 +620,6 @@ export async function syncTodayDashboardToGoogleSheets() {
     totalPaymentFees,
     netRevenue,
     costItems: productCosts.length,
+    cumulativeProfit,
   };
 }
