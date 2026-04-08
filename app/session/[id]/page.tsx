@@ -753,13 +753,13 @@ export default function SessionPage() {
 
                 <div className="pos-scroll space-y-4 md:min-h-0 md:pr-1">
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl bg-gray-50 p-4">
+                    <div className="rounded-2xl bg-gray-50 px-4 py-3">
                       <p className="text-sm text-gray-500">訂單狀態</p>
-                      <p className="mt-2 text-lg font-bold text-gray-900">{session.order_status}</p>
+                      <p className="mt-1 text-lg font-bold text-gray-900">{session.order_status}</p>
                     </div>
-                    <div className="rounded-2xl bg-gray-50 p-4">
+                    <div className="rounded-2xl bg-gray-50 px-4 py-3">
                       <p className="text-sm text-gray-500">付款狀態</p>
-                      <p className="mt-2 text-lg font-bold text-gray-900">
+                      <p className="mt-1 text-lg font-bold text-gray-900">
                         {session.payment_status}
                       </p>
                     </div>
