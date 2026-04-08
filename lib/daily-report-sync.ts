@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+﻿import { createClient } from "@supabase/supabase-js";
 import { mergeRowsByKey } from "@/lib/google-sheets";
 
 type SessionRow = {
@@ -122,22 +122,22 @@ export async function syncTodayDashboardToGoogleSheets() {
     cashCount?.closing_cash != null ? Number(cashCount.closing_cash) - expectedClosingCash : "";
 
   await mergeRowsByKey(
-    "Daily Summary",
+    "每日摘要",
     [
-      "business_date",
-      "revenue",
-      "guests",
-      "order_count",
-      "paid_order_count",
-      "unpaid_order_count",
-      "average_ticket",
-      "complimentary_total",
-      "cash_revenue",
-      "opening_cash",
-      "closing_cash",
-      "expected_closing_cash",
-      "closing_difference",
-      "synced_at",
+      "營業日期",
+      "今日營業額",
+      "今日來客數",
+      "今日訂單數",
+      "已付款訂單數",
+      "未付款訂單數",
+      "平均客單價",
+      "招待總額",
+      "現金收款",
+      "開店現金",
+      "關帳現金",
+      "系統應有現金",
+      "關帳差額",
+      "同步時間",
     ],
     [
       [
@@ -160,19 +160,19 @@ export async function syncTodayDashboardToGoogleSheets() {
   );
 
   await mergeRowsByKey(
-    "Cash Counts",
+    "現金清點",
     [
-      "business_date",
-      "opening_cash",
-      "opening_counted_at",
-      "opening_notes",
-      "closing_cash",
-      "closing_counted_at",
-      "closing_notes",
-      "cash_revenue",
-      "expected_closing_cash",
-      "closing_difference",
-      "synced_at",
+      "營業日期",
+      "開店現金",
+      "開店清點時間",
+      "開店備註",
+      "關帳現金",
+      "關帳清點時間",
+      "關帳備註",
+      "今日現金收款",
+      "系統應有現金",
+      "關帳差額",
+      "同步時間",
     ],
     [
       [
@@ -192,21 +192,21 @@ export async function syncTodayDashboardToGoogleSheets() {
   );
 
   await mergeRowsByKey(
-    "Session Details",
+    "訂單明細",
     [
-      "session_id",
-      "business_date",
-      "session_number",
-      "created_at",
-      "guest_count",
-      "order_status",
-      "payment_status",
-      "payment_method",
-      "subtotal_amount",
-      "discount_amount",
-      "total_amount",
-      "customer_type",
-      "customer_label",
+      "主單ID",
+      "營業日期",
+      "主單編號",
+      "建立時間",
+      "來客數",
+      "訂單狀態",
+      "付款狀態",
+      "付款方式",
+      "餐點小計",
+      "折扣金額",
+      "總計金額",
+      "客人類型",
+      "客人標記",
     ],
     sessions.map((session) => [
       session.id,
