@@ -150,6 +150,20 @@ export default function Home() {
     { label: "未結帳單數", value: `${summary.unpaidCount} 張`, tone: "text-rose-700" },
   ];
 
+  const todayReservations = useMemo(() => {
+    const deduped = new Map<string, ReservationInfo>();
+
+    for (const reservation of Object.values(reservedSeats)) {
+      deduped.set(reservation.reservationId, reservation);
+    }
+
+    return Array.from(deduped.values()).sort((a, b) => {
+      const timeCompare = a.reservationTime.localeCompare(b.reservationTime);
+      if (timeCompare !== 0) return timeCompare;
+      return a.reservationName.localeCompare(b.reservationName);
+    });
+  }, [reservedSeats]);
+
   const loadTodaySummary = useCallback(async () => {
     try {
       const now = new Date();
@@ -645,6 +659,36 @@ export default function Home() {
     }
   }
 
+  async function updateReservationStatus(
+    reservation: ReservationInfo,
+    status: "cancelled" | "no_show"
+  ) {
+    const statusLabel = status === "cancelled" ? "取消預約" : "標記逾時";
+    const confirmed = window.confirm(`確定要${statusLabel}嗎？`);
+
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabase
+        .from("reservations")
+        .update({
+          status,
+        })
+        .eq("id", reservation.reservationId);
+
+      if (error) throw error;
+
+      if (viewingReservation?.reservationId === reservation.reservationId) {
+        setViewingReservation(null);
+      }
+
+      await loadReservedSeats();
+    } catch (error) {
+      console.error("Failed to update reservation status", error);
+      alert(`${statusLabel}失敗，請查看 console。`);
+    }
+  }
+
   function seatClass(seat: string, variant: "table" | "bar") {
     const selected = selectedSeats.includes(seat);
     const viewing = viewingSession?.seatCodes.includes(seat);
@@ -873,6 +917,22 @@ export default function Home() {
                     </div>
                     <AsideCard label="座位" value={formatSeatLabel(viewingReservation.seatCodes)} />
                     <AsideCard label="備註" value={viewingReservation.notes || "無"} />
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updateReservationStatus(viewingReservation, "cancelled")}
+                        className="h-11 rounded-[20px] bg-rose-100 px-3 text-sm font-semibold text-rose-800 hover:bg-rose-200"
+                      >
+                        取消預約
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateReservationStatus(viewingReservation, "no_show")}
+                        className="h-11 rounded-[20px] bg-slate-200 px-3 text-sm font-semibold text-slate-800 hover:bg-slate-300"
+                      >
+                        標記逾時
+                      </button>
+                    </div>
                     <button
                       type="button"
                       onClick={handleConvertReservationToSession}
@@ -1037,6 +1097,75 @@ export default function Home() {
                 )}
               </section>
             )}
+
+            <section className="pos-panel flex min-h-0 flex-col rounded-[28px] p-3">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">今日預約列表</h3>
+                  <p className="text-xs text-slate-500">可直接查看、取消或標記逾時</p>
+                </div>
+                <span className="rounded-full bg-fuchsia-100 px-3 py-1 text-xs font-semibold text-fuchsia-800">
+                  {todayReservations.length} 筆
+                </span>
+              </div>
+
+              <div className="pos-scroll min-h-0 space-y-2 pr-1">
+                {todayReservations.length === 0 ? (
+                  <div className="rounded-[22px] bg-slate-50 p-4 text-sm text-slate-500">
+                    今日尚無預約
+                  </div>
+                ) : (
+                  todayReservations.map((reservation) => (
+                    <div
+                      key={reservation.reservationId}
+                      className={`rounded-[22px] border p-3 ${
+                        viewingReservation?.reservationId === reservation.reservationId
+                          ? "border-fuchsia-300 bg-fuchsia-50"
+                          : "border-slate-200 bg-slate-50"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setViewingReservationState(reservation)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900">
+                              {reservation.reservationTime} {reservation.reservationName}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {formatSeatLabel(reservation.seatCodes)} / {reservation.guestCount} 人
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">{reservation.reservationPhone}</p>
+                          </div>
+                          <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600">
+                            {reservation.reservationCode}
+                          </span>
+                        </div>
+                      </button>
+
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => updateReservationStatus(reservation, "cancelled")}
+                          className="h-9 rounded-2xl bg-rose-100 px-3 text-xs font-semibold text-rose-800 hover:bg-rose-200"
+                        >
+                          取消
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateReservationStatus(reservation, "no_show")}
+                          className="h-9 rounded-2xl bg-slate-200 px-3 text-xs font-semibold text-slate-800 hover:bg-slate-300"
+                        >
+                          逾時
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
           </aside>
         </div>
       </div>
