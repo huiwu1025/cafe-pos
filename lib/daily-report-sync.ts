@@ -585,7 +585,6 @@ function buildMonthlyMetrics(
 }
 
 async function syncSourceTemplateSheets(
-  sourceSpreadsheetId: string,
   dailyMetrics: DailyMetric[],
   itemSummary: Map<string, ItemProfitSummary>,
   monthlyMetrics: MonthlyMetric[],
@@ -593,8 +592,6 @@ async function syncSourceTemplateSheets(
   fixedExpenses: FixedExpenseRow[],
   procurements: ProcurementRow[]
 ) {
-  if (!sourceSpreadsheetId) return;
-
   const sortedDailyMetrics = [...dailyMetrics].sort((a, b) => a.date.localeCompare(b.date));
 
   await replaceSheetRangeValues(
@@ -639,7 +636,6 @@ async function syncSourceTemplateSheets(
         item.rent,
       ]),
     ],
-    sourceSpreadsheetId
   );
 
   const rankedItems = Array.from(itemSummary.entries())
@@ -690,7 +686,6 @@ async function syncSourceTemplateSheets(
         ];
       }),
     ],
-    sourceSpreadsheetId
   );
 
   const currentYear = todayIsoDate().slice(0, 4);
@@ -769,7 +764,6 @@ async function syncSourceTemplateSheets(
       ],
       ...yearRows,
     ],
-    sourceSpreadsheetId
   );
 }
 
@@ -985,7 +979,7 @@ export async function syncTodayDashboardToGoogleSheets() {
     ["目前手續費規則", "歐付寶 2.45% / 每筆最低 1 元；現金與其他先視為 0 元"],
   ]);
 
-  await syncSourceTemplateSheets(sourceSpreadsheetId, dailyMetrics, allItemSummary, monthlyMetrics, productCosts, fixedExpenses, procurements);
+  await syncSourceTemplateSheets(dailyMetrics, allItemSummary, monthlyMetrics, productCosts, fixedExpenses, procurements);
 
   return {
     businessDate,
