@@ -89,46 +89,66 @@ function buildReservationLabel(name: string, phone: string) {
   return `${normalizedName} | ${normalizedPhone}`;
 }
 
+function normalizePhone(value: string) {
+  return value.replace(/\D/g, "");
+}
+
 function normalizeTimeLabel(value: string) {
   return String(value).slice(0, 5);
 }
 
 async function findBlacklistMatches(name: string, phone: string) {
-  const checks: PromiseLike<{ data: BlacklistMatch[] | null; error: unknown }>[] = [];
+  const normalizedName = name.trim();
+  const normalizedPhone = normalizePhone(phone);
+  if (!normalizedName && !normalizedPhone) return [];
 
-  if (phone.trim()) {
-    checks.push(
-      supabase
-        .from("blacklist_customers")
-        .select("id, customer_name, customer_phone, strike_count, last_reason")
-        .eq("customer_phone", phone.trim())
-        .limit(1)
-    );
-  }
-
-  if (name.trim()) {
-    checks.push(
-      supabase
-        .from("blacklist_customers")
-        .select("id, customer_name, customer_phone, strike_count, last_reason")
-        .eq("customer_name", name.trim())
-        .limit(3)
-    );
-  }
-
-  if (checks.length === 0) return [];
-
-  const results = await Promise.all(checks);
+  const results = await Promise.all([
+    supabase
+      .from("blacklist_customers")
+      .select("id, customer_name, customer_phone, strike_count, last_reason")
+      .limit(200),
+    supabase
+      .from("reservations")
+      .select("id, reservation_name, reservation_phone")
+      .eq("status", "no_show")
+      .limit(200),
+  ]);
   const matches = new Map<string, BlacklistMatch>();
 
-  for (const result of results) {
+  const [blacklistResult, noShowResult] = results;
+  for (const result of [blacklistResult]) {
     const maybeError = result.error as { message?: string } | null;
     if (maybeError?.message?.includes("blacklist_customers")) {
-      return [];
+      break;
     }
     if (result.error) throw result.error;
     for (const row of result.data ?? []) {
-      matches.set(row.id, row);
+      const rowName = row.customer_name?.trim() ?? "";
+      const rowPhone = normalizePhone(row.customer_phone ?? "");
+      if (
+        (normalizedPhone && rowPhone === normalizedPhone) ||
+        (normalizedName && rowName === normalizedName)
+      ) {
+        matches.set(row.id, row);
+      }
+    }
+  }
+
+  if (noShowResult.error) throw noShowResult.error;
+  for (const row of noShowResult.data ?? []) {
+    const rowName = row.reservation_name?.trim() ?? "";
+    const rowPhone = normalizePhone(row.reservation_phone ?? "");
+    if (
+      (normalizedPhone && rowPhone === normalizedPhone) ||
+      (normalizedName && rowName === normalizedName)
+    ) {
+      matches.set(`no-show-${row.id}`, {
+        id: `no-show-${row.id}`,
+        customer_name: row.reservation_name,
+        customer_phone: row.reservation_phone,
+        strike_count: 1,
+        last_reason: "no_show",
+      });
     }
   }
 

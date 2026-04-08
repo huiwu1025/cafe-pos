@@ -71,59 +71,42 @@ function normalizeTimeLabel(value: string) {
   return String(value).slice(0, 5);
 }
 
+function normalizePhone(value: string) {
+  return value.replace(/\D/g, "");
+}
+
 async function addReservationToBlacklist(reservation: ReservationInfo) {
-  const trimmedPhone = reservation.reservationPhone.trim();
+  const trimmedPhone = normalizePhone(reservation.reservationPhone);
   const trimmedName = reservation.reservationName.trim();
 
   try {
-    if (trimmedPhone) {
-      const { data: existingByPhone, error: phoneLookupError } = await supabase
+    const { data: existingRows, error: lookupError } = await supabase
+      .from("blacklist_customers")
+      .select("id, customer_name, customer_phone, strike_count")
+      .limit(200);
+
+    if (lookupError) throw lookupError;
+
+    const existingMatch = (existingRows ?? []).find((row) => {
+      const rowPhone = normalizePhone(row.customer_phone ?? "");
+      const rowName = row.customer_name?.trim() ?? "";
+      return (trimmedPhone && rowPhone === trimmedPhone) || (trimmedName && rowName === trimmedName);
+    });
+
+    if (existingMatch) {
+      const { error: updateError } = await supabase
         .from("blacklist_customers")
-        .select("id, customer_name, customer_phone, strike_count")
-        .eq("customer_phone", trimmedPhone)
-        .maybeSingle();
+        .update({
+          customer_name: trimmedName || existingMatch.customer_name,
+          customer_phone: trimmedPhone || existingMatch.customer_phone,
+          strike_count: Number(existingMatch.strike_count ?? 0) + 1,
+          last_reason: "no_show",
+          last_flagged_at: new Date().toISOString(),
+        })
+        .eq("id", existingMatch.id);
 
-      if (phoneLookupError) throw phoneLookupError;
-
-      if (existingByPhone) {
-        const { error: updateError } = await supabase
-          .from("blacklist_customers")
-          .update({
-            customer_name: trimmedName || existingByPhone.customer_name,
-            strike_count: Number(existingByPhone.strike_count ?? 0) + 1,
-            last_reason: "no_show",
-            last_flagged_at: new Date().toISOString(),
-          })
-          .eq("id", existingByPhone.id);
-
-        if (updateError) throw updateError;
-        return;
-      }
-    }
-
-    if (trimmedName) {
-      const { data: existingByName, error: nameLookupError } = await supabase
-        .from("blacklist_customers")
-        .select("id, customer_name, customer_phone, strike_count")
-        .eq("customer_name", trimmedName)
-        .maybeSingle();
-
-      if (nameLookupError) throw nameLookupError;
-
-      if (existingByName) {
-        const { error: updateError } = await supabase
-          .from("blacklist_customers")
-          .update({
-            customer_phone: trimmedPhone || existingByName.customer_phone,
-            strike_count: Number(existingByName.strike_count ?? 0) + 1,
-            last_reason: "no_show",
-            last_flagged_at: new Date().toISOString(),
-          })
-          .eq("id", existingByName.id);
-
-        if (updateError) throw updateError;
-        return;
-      }
+      if (updateError) throw updateError;
+      return;
     }
 
     const { error: insertError } = await supabase.from("blacklist_customers").insert({
