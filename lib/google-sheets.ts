@@ -135,7 +135,7 @@ export async function readSheetValues(title: string) {
 
 export async function replaceSheetValues(title: string, values: (string | number)[][]) {
   await ensureSheetExists(title);
-  await sheetsRequest(`/values/${encodeURIComponent(`${title}!A:ZZ`)}/clear`, {
+  await sheetsRequest(`/values/${encodeURIComponent(`${title}!A:ZZ`)}:clear`, {
     method: "POST",
     body: JSON.stringify({}),
   });
