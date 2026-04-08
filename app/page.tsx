@@ -680,7 +680,7 @@ export default function Home() {
             </section>
 
             <aside className="grid min-h-0 gap-3 pb-[calc(0.5rem+env(safe-area-inset-bottom))] lg:grid-rows-[minmax(0,1fr)_auto]">
-              <section className="pos-panel flex min-h-0 flex-col overflow-hidden rounded-[28px] p-3 lg:p-4">
+              <section className="pos-panel flex min-h-0 flex-col rounded-[28px] p-3 lg:p-4">
                 {viewingSession ? (
                   <>
                     <div className="flex items-start justify-between gap-3">
@@ -710,20 +710,22 @@ export default function Home() {
                       <button type="button" onClick={() => setViewingReservation(null)} className="h-10 rounded-2xl bg-slate-100 px-3 text-sm font-semibold text-slate-700">關閉</button>
                     </div>
                     <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3">
-                      <AsideCard label="預約編號" value={viewingReservation.reservationCode} />
-                      <AsideCard label="預約姓名" value={viewingReservation.reservationName} />
-                      <AsideCard label="預約電話" value={viewingReservation.reservationPhone} />
-                      <div className="grid grid-cols-2 gap-2">
-                        <AsideCard label="時間" value={viewingReservation.reservationTime} />
-                        <AsideCard label="來客數" value={`${viewingReservation.guestCount} 人`} />
+                      <div className="pos-scroll min-h-0 flex-1 space-y-3 pr-1">
+                        <AsideCard label="預約編號" value={viewingReservation.reservationCode} />
+                        <AsideCard label="預約姓名" value={viewingReservation.reservationName} />
+                        <AsideCard label="預約電話" value={viewingReservation.reservationPhone} />
+                        <div className="grid grid-cols-2 gap-2">
+                          <AsideCard label="時間" value={viewingReservation.reservationTime} />
+                          <AsideCard label="來客數" value={`${viewingReservation.guestCount} 人`} />
+                        </div>
+                        <AsideCard label="座位" value={formatSeatLabel(viewingReservation.seatCodes)} />
+                        <AsideCard label="備註" value={viewingReservation.notes || "無"} />
+                        <div className="grid grid-cols-2 gap-2">
+                          <button type="button" onClick={() => updateReservationStatus(viewingReservation, "cancelled")} className="h-11 rounded-[20px] bg-rose-100 px-3 text-sm font-semibold text-rose-800 hover:bg-rose-200">取消預約</button>
+                          <button type="button" onClick={() => updateReservationStatus(viewingReservation, "no_show")} className="h-11 rounded-[20px] bg-slate-200 px-3 text-sm font-semibold text-slate-800 hover:bg-slate-300">標記逾時</button>
+                        </div>
                       </div>
-                      <AsideCard label="座位" value={formatSeatLabel(viewingReservation.seatCodes)} />
-                      <AsideCard label="備註" value={viewingReservation.notes || "無"} />
-                      <div className="grid grid-cols-2 gap-2">
-                        <button type="button" onClick={() => updateReservationStatus(viewingReservation, "cancelled")} className="h-11 rounded-[20px] bg-rose-100 px-3 text-sm font-semibold text-rose-800 hover:bg-rose-200">取消預約</button>
-                        <button type="button" onClick={() => updateReservationStatus(viewingReservation, "no_show")} className="h-11 rounded-[20px] bg-slate-200 px-3 text-sm font-semibold text-slate-800 hover:bg-slate-300">標記逾時</button>
-                      </div>
-                      <button type="button" onClick={handleConvertReservationToSession} disabled={isConvertingReservation} className="mt-auto h-14 w-full rounded-[22px] bg-emerald-500 text-lg font-bold text-white hover:bg-emerald-600 disabled:opacity-60">{isConvertingReservation ? "轉單中..." : "客到轉開單"}</button>
+                      <button type="button" onClick={handleConvertReservationToSession} disabled={isConvertingReservation} className="h-14 w-full shrink-0 rounded-[22px] bg-emerald-500 text-lg font-bold text-white hover:bg-emerald-600 disabled:opacity-60">{isConvertingReservation ? "轉單中..." : "客到轉開單"}</button>
                     </div>
                   </>
                 ) : (
