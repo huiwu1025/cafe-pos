@@ -45,6 +45,8 @@ type OrderItem = {
 };
 
 const CUSTOMER_TYPES = ["客人", "朋友", "熟客", "粉絲"];
+const TEMP_OPTIONS = ["冰", "涼", "熱"];
+const SUGAR_OPTIONS = ["兩倍糖", "正常", "少糖", "無糖"];
 const PAYMENT_METHOD_OPTIONS = ["現金", "歐付寶", "其他"];
 
 export default function SessionPage() {
@@ -59,6 +61,9 @@ export default function SessionPage() {
   const [isAdding, setIsAdding] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
   const [isDeletingSession, setIsDeletingSession] = useState(false);
+
+  const [selectedTemp, setSelectedTemp] = useState("冰");
+  const [selectedSugar, setSelectedSugar] = useState("正常");
 
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
@@ -238,6 +243,10 @@ export default function SessionPage() {
     return nextProduct;
   }
 
+  function buildSpecNote() {
+    return `${selectedTemp} / ${selectedSugar}`;
+  }
+
   async function addManualSurcharge() {
     if (isLocked) return;
 
@@ -285,11 +294,12 @@ export default function SessionPage() {
 
     try {
       setIsAdding(true);
+      const specNote = buildSpecNote();
 
       const existingItem = orderItems.find(
         (item) =>
           item.product_id === product.id &&
-          item.note === "" &&
+          item.note === specNote &&
           item.status === "active" &&
           (item.custom_note ?? "") === "" &&
           !item.is_complimentary
@@ -316,7 +326,7 @@ export default function SessionPage() {
           unit_price: product.price,
           quantity: 1,
           line_total: product.price,
-          note: "",
+          note: specNote,
           custom_note: "",
           status: "active",
           is_complimentary: false,
@@ -742,6 +752,59 @@ export default function SessionPage() {
                       <p className="mt-1 text-lg font-bold text-gray-900">
                         {session.payment_status}
                       </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 p-4">
+                    <div className="mb-3">
+                      <p className="text-sm font-medium text-gray-600">快速規格</p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        <p className="mb-2 text-sm font-medium text-gray-500">溫度</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {TEMP_OPTIONS.map((temp) => (
+                            <button
+                              key={temp}
+                              type="button"
+                              onClick={() => setSelectedTemp(temp)}
+                              className={`min-h-[50px] rounded-2xl px-3 text-base font-medium transition ${
+                                selectedTemp === temp
+                                  ? "bg-blue-500 text-white"
+                                  : "bg-gray-50 text-gray-700 ring-1 ring-gray-200 hover:bg-gray-100"
+                              }`}
+                            >
+                              {temp}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="mb-2 text-sm font-medium text-gray-500">甜度</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {SUGAR_OPTIONS.map((sugar) => (
+                            <button
+                              key={sugar}
+                              type="button"
+                              onClick={() => setSelectedSugar(sugar)}
+                              className={`min-h-[50px] rounded-2xl px-3 text-base font-medium transition ${
+                                selectedSugar === sugar
+                                  ? "bg-pink-500 text-white"
+                                  : "bg-gray-50 text-gray-700 ring-1 ring-gray-200 hover:bg-gray-100"
+                              }`}
+                            >
+                              {sugar}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-700">
+                        目前規格：
+                        <span className="ml-2 font-semibold text-gray-900">{buildSpecNote()}</span>
+                      </div>
                     </div>
                   </div>
 
