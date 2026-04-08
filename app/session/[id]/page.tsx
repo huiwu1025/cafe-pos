@@ -50,48 +50,6 @@ const SUGAR_OPTIONS = ["兩倍糖", "正常", "少糖", "無糖"];
 const EXTRA_OPTIONS = ["去冰", "加珍珠", "燕麥奶"];
 const PAYMENT_METHOD_OPTIONS = ["現金", "歐付寶", "其他"];
 
-function parseReservationLabel(rawLabel: string) {
-  const value = rawLabel.trim();
-
-  if (!value) {
-    return {
-      reservationName: "",
-      reservationPhone: "",
-    };
-  }
-
-  const separators = ["|", "｜", "/", "／", ","];
-  const separator = separators.find((item) => value.includes(item));
-
-  if (!separator) {
-    return {
-      reservationName: value,
-      reservationPhone: "",
-    };
-  }
-
-  const parts = value
-    .split(separator)
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  return {
-    reservationName: parts[0] ?? "",
-    reservationPhone: parts[1] ?? "",
-  };
-}
-
-function buildReservationLabel(name: string, phone: string) {
-  const normalizedName = name.trim();
-  const normalizedPhone = phone.trim();
-
-  if (!normalizedName && !normalizedPhone) return "";
-  if (!normalizedPhone) return normalizedName;
-  if (!normalizedName) return normalizedPhone;
-
-  return `${normalizedName} | ${normalizedPhone}`;
-}
-
 export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
@@ -112,8 +70,7 @@ export default function SessionPage() {
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
 
-  const [reservationName, setReservationName] = useState("");
-  const [reservationPhone, setReservationPhone] = useState("");
+  const [customerMemo, setCustomerMemo] = useState("");
   const [isSavingCustomerLabel, setIsSavingCustomerLabel] = useState(false);
 
   const [paymentMethod, setPaymentMethod] = useState("現金");
@@ -150,9 +107,7 @@ export default function SessionPage() {
     if (error) throw error;
 
     setSession(data);
-    const reservationInfo = parseReservationLabel(data.customer_label ?? "");
-    setReservationName(reservationInfo.reservationName);
-    setReservationPhone(reservationInfo.reservationPhone);
+    setCustomerMemo(data.customer_label ?? "");
     setPaymentMethod(data.payment_method ?? "現金");
     setTipAmountInput(String(Number(data.tip_amount ?? 0)));
     setAmountReceivedInput(
@@ -537,7 +492,7 @@ export default function SessionPage() {
       const { error } = await supabase
         .from("dining_sessions")
         .update({
-          customer_label: buildReservationLabel(reservationName, reservationPhone),
+          customer_label: customerMemo.trim(),
         })
         .eq("id", sessionId);
 
@@ -545,12 +500,12 @@ export default function SessionPage() {
 
       setSession((prev) =>
         prev
-          ? {
-              ...prev,
-              customer_label: buildReservationLabel(reservationName, reservationPhone),
-            }
-          : prev
-      );
+            ? {
+                ...prev,
+                customer_label: customerMemo.trim(),
+              }
+            : prev
+        );
     } catch (error) {
       console.error("儲存客人名稱失敗：", error);
       alert("儲存客人名稱失敗");
@@ -811,93 +766,6 @@ export default function SessionPage() {
                   </div>
 
                   <div className="rounded-2xl border border-gray-200 p-4">
-                    <label className="mb-3 block text-sm font-medium text-gray-600">付款方式</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {PAYMENT_METHOD_OPTIONS.map((method) => (
-                        <button
-                          key={method}
-                          type="button"
-                          onClick={() => setPaymentMethod(method)}
-                          disabled={isLocked}
-                          className={`min-h-[52px] rounded-2xl px-3 text-base font-semibold transition ${
-                            paymentMethod === method
-                              ? "bg-sky-500 text-white"
-                              : "bg-gray-100 text-gray-700"
-                          } disabled:opacity-60`}
-                        >
-                          {method}
-                        </button>
-                      ))}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={savePaymentMethod}
-                      disabled={isLocked || isSavingPaymentMethod}
-                      className="mt-3 min-h-[46px] w-full rounded-2xl bg-sky-100 px-4 text-base font-medium text-sky-900 hover:bg-sky-200 disabled:opacity-60"
-                    >
-                      {isSavingPaymentMethod ? "儲存中..." : "儲存付款方式"}
-                    </button>
-                  </div>
-
-                  <div className="rounded-2xl border border-gray-200 p-4">
-                    <label className="mb-3 block text-sm font-medium text-gray-600">客人類型</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {CUSTOMER_TYPES.map((type) => (
-                        <button
-                          key={type}
-                          type="button"
-                          onClick={() => updateCustomerType(type)}
-                          className={`min-h-[52px] rounded-2xl px-3 text-base font-semibold transition ${
-                            (session.customer_type ?? "客人") === type
-                              ? "bg-orange-400 text-white"
-                              : "bg-gray-100 text-gray-700"
-                          }`}
-                        >
-                          {type}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="mt-4 grid gap-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-600">
-                          預約姓名
-                        </label>
-                        <input
-                          type="text"
-                          value={reservationName}
-                          onChange={(e) => setReservationName(e.target.value)}
-                          placeholder="例如：王小安"
-                          className="mt-2 h-12 w-full rounded-2xl border border-gray-300 bg-white px-4 text-sm outline-none focus:border-amber-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-600">
-                          預約電話
-                        </label>
-                        <input
-                          type="tel"
-                          value={reservationPhone}
-                          onChange={(e) => setReservationPhone(e.target.value)}
-                          placeholder="例如：0912-345-678"
-                          className="mt-2 h-12 w-full rounded-2xl border border-gray-300 bg-white px-4 text-sm outline-none focus:border-amber-500"
-                        />
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={saveCustomerLabel}
-                        disabled={isSavingCustomerLabel}
-                        className="min-h-[44px] w-full rounded-2xl bg-amber-100 px-4 text-sm font-medium text-amber-900 hover:bg-amber-200 disabled:opacity-60"
-                      >
-                        {isSavingCustomerLabel ? "儲存中..." : "儲存預約資訊"}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-gray-200 p-4">
                     <div className="mb-3">
                       <p className="text-sm font-medium text-gray-600">快速規格</p>
                     </div>
@@ -967,6 +835,78 @@ export default function SessionPage() {
                         目前規格：
                         <span className="ml-2 font-semibold text-gray-900">{buildSpecNote()}</span>
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 p-4">
+                    <label className="mb-3 block text-sm font-medium text-gray-600">付款方式</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {PAYMENT_METHOD_OPTIONS.map((method) => (
+                        <button
+                          key={method}
+                          type="button"
+                          onClick={() => setPaymentMethod(method)}
+                          disabled={isLocked}
+                          className={`min-h-[52px] rounded-2xl px-3 text-base font-semibold transition ${
+                            paymentMethod === method
+                              ? "bg-sky-500 text-white"
+                              : "bg-gray-100 text-gray-700"
+                          } disabled:opacity-60`}
+                        >
+                          {method}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={savePaymentMethod}
+                      disabled={isLocked || isSavingPaymentMethod}
+                      className="mt-3 min-h-[46px] w-full rounded-2xl bg-sky-100 px-4 text-base font-medium text-sky-900 hover:bg-sky-200 disabled:opacity-60"
+                    >
+                      {isSavingPaymentMethod ? "儲存中..." : "儲存付款方式"}
+                    </button>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 p-4">
+                    <label className="mb-3 block text-sm font-medium text-gray-600">客人類型</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {CUSTOMER_TYPES.map((type) => (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => updateCustomerType(type)}
+                          className={`min-h-[52px] rounded-2xl px-3 text-base font-semibold transition ${
+                            (session.customer_type ?? "客人") === type
+                              ? "bg-orange-400 text-white"
+                              : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {type}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600">姓名備註</label>
+                        <input
+                          type="text"
+                          value={customerMemo}
+                          onChange={(e) => setCustomerMemo(e.target.value)}
+                          placeholder="例如：王小安 / 13:30 預約 / 靠窗"
+                          className="mt-2 h-12 w-full rounded-2xl border border-gray-300 bg-white px-4 text-sm outline-none focus:border-amber-500"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={saveCustomerLabel}
+                        disabled={isSavingCustomerLabel}
+                        className="min-h-[44px] w-full rounded-2xl bg-amber-100 px-4 text-sm font-medium text-amber-900 hover:bg-amber-200 disabled:opacity-60"
+                      >
+                        {isSavingCustomerLabel ? "儲存中..." : "儲存姓名備註"}
+                      </button>
                     </div>
                   </div>
 
