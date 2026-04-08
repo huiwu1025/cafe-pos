@@ -22,6 +22,7 @@ type ReservationInfo = {
   guestCount: number;
   notes: string;
   seatCodes: string[];
+  convertedSessionId?: string | null;
 };
 
 type DashboardSummary = {
@@ -95,6 +96,14 @@ function normalizePhone(value: string) {
 
 function normalizeTimeLabel(value: string) {
   return String(value).slice(0, 5);
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const message = String((error as { message?: string }).message ?? "").trim();
+    if (message) return message;
+  }
+  return fallback;
 }
 
 async function findBlacklistMatches(name: string, phone: string) {
@@ -267,7 +276,8 @@ export default function Home() {
           reservation_time,
           guest_count,
           notes,
-          status
+          status,
+          converted_session_id
         )
       `);
       if (error) {
@@ -287,7 +297,7 @@ export default function Home() {
         if (!reservation?.id || !seat?.seat_code || reservation.status !== "reserved" || reservation.reservation_date !== today) continue;
         const existing = reservationMap.get(reservation.id);
         if (existing) existing.seatCodes.push(seat.seat_code);
-        else reservationMap.set(reservation.id, { reservationId: reservation.id, reservationCode: reservation.reservation_code, reservationName: reservation.reservation_name, reservationPhone: reservation.reservation_phone, reservationDate: reservation.reservation_date, reservationTime: normalizeTimeLabel(reservation.reservation_time), guestCount: Number(reservation.guest_count ?? 0), notes: reservation.notes ?? "", seatCodes: [seat.seat_code] });
+        else reservationMap.set(reservation.id, { reservationId: reservation.id, reservationCode: reservation.reservation_code, reservationName: reservation.reservation_name, reservationPhone: reservation.reservation_phone, reservationDate: reservation.reservation_date, reservationTime: normalizeTimeLabel(reservation.reservation_time), guestCount: Number(reservation.guest_count ?? 0), notes: reservation.notes ?? "", seatCodes: [seat.seat_code], convertedSessionId: reservation.converted_session_id ?? null });
       }
       for (const reservationInfo of reservationMap.values()) {
         reservationInfo.seatCodes.sort(sortSeatCodes);
@@ -489,9 +499,30 @@ export default function Home() {
     if (!viewingReservation) return;
     try {
       setIsConvertingReservation(true);
+      const { data: reservationRow, error: reservationError } = await supabase
+        .from("reservations")
+        .select("id, reservation_name, reservation_phone, guest_count, status, converted_session_id")
+        .eq("id", viewingReservation.reservationId)
+        .single();
+      if (reservationError) throw reservationError;
+
+      if (reservationRow.converted_session_id) {
+        if (reservationRow.status !== "arrived") {
+          const { error: updateExistingError } = await supabase
+            .from("reservations")
+            .update({ status: "arrived" })
+            .eq("id", viewingReservation.reservationId);
+          if (updateExistingError) throw updateExistingError;
+        }
+        resetSelectionState();
+        await Promise.all([loadTodaySummary(), loadOccupiedSeats(), loadReservedSeats()]);
+        router.push(`/session/${reservationRow.converted_session_id}`);
+        return;
+      }
+
       const { data: sessionData, error: sessionError } = await supabase.from("dining_sessions").insert({
         session_number: generateSessionNumber(),
-        guest_count: viewingReservation.guestCount,
+        guest_count: Number(reservationRow.guest_count ?? viewingReservation.guestCount ?? 1),
         order_status: "open",
         payment_status: "unpaid",
         payment_method: "現金",
@@ -499,7 +530,10 @@ export default function Home() {
         discount_amount: 0,
         total_amount: 0,
         customer_type: "客人",
-        customer_label: buildReservationLabel(viewingReservation.reservationName, viewingReservation.reservationPhone),
+        customer_label: buildReservationLabel(
+          reservationRow.reservation_name ?? viewingReservation.reservationName,
+          reservationRow.reservation_phone ?? viewingReservation.reservationPhone
+        ),
       }).select().single();
       if (sessionError) throw sessionError;
       const seatRows = await fetchSeatRows(viewingReservation.seatCodes);
@@ -512,7 +546,7 @@ export default function Home() {
       router.push(`/session/${sessionData.id}`);
     } catch (error) {
       console.error("Failed to convert reservation", error);
-      alert("預約轉開單失敗");
+      alert(`預約轉開單失敗：${getErrorMessage(error, "請稍後再試")}`);
     } finally {
       setIsConvertingReservation(false);
     }
