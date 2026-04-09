@@ -60,6 +60,14 @@ type ManualDailyReportRow = {
   notes?: string | null;
 };
 
+type ManualDailyProductSaleRow = {
+  business_date: string;
+  product_name: string;
+  quantity: number | null;
+  sales_amount: number | null;
+  notes?: string | null;
+};
+
 type ProductCostItem = {
   name: string;
   category: string;
@@ -291,6 +299,24 @@ async function loadManualDailyReports(supabase: ReturnType<typeof getSupabaseSer
   return (data ?? []) as ManualDailyReportRow[];
 }
 
+async function loadManualDailyProductSales(supabase: ReturnType<typeof getSupabaseServerClient>) {
+  const { data, error } = await supabase
+    .from("manual_daily_product_sales")
+    .select("*")
+    .order("business_date", { ascending: true })
+    .order("product_name", { ascending: true });
+
+  if (error) {
+    const maybeMessage = (error as { message?: string }).message ?? "";
+    if (maybeMessage.includes("manual_daily_product_sales")) {
+      return [] as ManualDailyProductSaleRow[];
+    }
+    throw error;
+  }
+
+  return (data ?? []) as ManualDailyProductSaleRow[];
+}
+
 async function loadProductCosts(sourceSpreadsheetId: string) {
   const rows = await readSheetValues(SOURCE_PRODUCT_COST_SHEET, sourceSpreadsheetId);
   const headerIndex = findHeaderRowIndex(rows, ["品項名稱", "類別", "售價", "單位成本"]);
@@ -389,6 +415,48 @@ function buildItemProfitSummary(orderItems: OrderItemRow[], productCosts: Produc
     const costInfo = productCostMap.get(productName);
     const quantity = Number(item.quantity ?? 0);
     const salesAmount = Number(item.line_total ?? 0);
+    const estimatedCost = quantity * Number(costInfo?.unitCost ?? 0);
+    const grossProfit = salesAmount - estimatedCost;
+
+    const existing = summary.get(productName) ?? {
+      category: costInfo?.category ?? "",
+      quantity: 0,
+      salesAmount: 0,
+      unitCost: Number(costInfo?.unitCost ?? 0),
+      estimatedCost: 0,
+      grossProfit: 0,
+      grossMargin: costInfo?.grossMargin ?? "",
+      featured: costInfo?.featured ?? "",
+      notes: costInfo?.notes ?? "",
+    };
+
+    existing.quantity += quantity;
+    existing.salesAmount += salesAmount;
+    existing.estimatedCost += estimatedCost;
+    existing.grossProfit += grossProfit;
+    summary.set(productName, existing);
+  }
+
+  return summary;
+}
+
+function mergeManualProductSalesIntoSummary(
+  baseSummary: Map<string, ItemProfitSummary>,
+  manualSales: ManualDailyProductSaleRow[],
+  productCosts: ProductCostItem[]
+) {
+  if (manualSales.length === 0) return baseSummary;
+
+  const summary = new Map(baseSummary);
+  const productCostMap = new Map(productCosts.map((item) => [normalizeProductName(item.name), item]));
+
+  for (const sale of manualSales) {
+    const productName = normalizeProductName(sale.product_name ?? "");
+    if (!productName) continue;
+
+    const costInfo = productCostMap.get(productName);
+    const quantity = Number(sale.quantity ?? 0);
+    const salesAmount = Number(sale.sales_amount ?? 0);
     const estimatedCost = quantity * Number(costInfo?.unitCost ?? 0);
     const grossProfit = salesAmount - estimatedCost;
 
@@ -849,6 +917,7 @@ export async function syncTodayDashboardToGoogleSheets() {
   const { sessions: allSessions, orderItems: allOrderItems } = await loadAllSessionsAndItems(supabase);
   const cashCount = await loadCashCountForDate(supabase, businessDate);
   const manualDailyReports = await loadManualDailyReports(supabase);
+  const manualProductSales = await loadManualDailyProductSales(supabase);
 
   const availableSheets = sourceSpreadsheetId ? await listSheetTitles(sourceSpreadsheetId) : [];
   const productCosts = sourceSpreadsheetId ? await loadProductCosts(sourceSpreadsheetId) : [];
@@ -892,8 +961,16 @@ export async function syncTodayDashboardToGoogleSheets() {
     0
   );
   const netRevenue = todayMetric.actualReceived - totalPaymentFees;
-  const todayItemSummary = buildItemProfitSummary(orderItems, productCosts);
-  const allItemSummary = buildItemProfitSummary(allOrderItems, productCosts);
+  const todayItemSummary = mergeManualProductSalesIntoSummary(
+    buildItemProfitSummary(orderItems, productCosts),
+    manualProductSales.filter((item) => item.business_date === businessDate),
+    productCosts
+  );
+  const allItemSummary = mergeManualProductSalesIntoSummary(
+    buildItemProfitSummary(allOrderItems, productCosts),
+    manualProductSales,
+    productCosts
+  );
   const monthlyMetrics = buildMonthlyMetrics(dailyMetrics, fixedExpenses, procurements);
 
   const allPaidSessions = allSessions.filter((session) => session.payment_status === "paid");
