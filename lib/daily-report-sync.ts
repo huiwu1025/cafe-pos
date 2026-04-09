@@ -70,6 +70,22 @@ type ManualDailyProductSaleRow = {
   notes?: string | null;
 };
 
+type ManualSessionDetailRow = {
+  id: string;
+  business_date: string;
+  session_number: string;
+  created_at?: string | null;
+  guest_count: number | null;
+  order_status: string | null;
+  payment_status: string | null;
+  payment_method?: string | null;
+  subtotal_amount?: number | null;
+  discount_amount?: number | null;
+  total_amount: number | null;
+  customer_type?: string | null;
+  customer_label?: string | null;
+};
+
 type ProductCostItem = {
   name: string;
   category: string;
@@ -355,6 +371,24 @@ async function loadManualDailyProductSales(supabase: ReturnType<typeof getSupaba
   }
 
   return (data ?? []) as ManualDailyProductSaleRow[];
+}
+
+async function loadManualSessionDetails(supabase: ReturnType<typeof getSupabaseServerClient>) {
+  const { data, error } = await supabase
+    .from("manual_session_details")
+    .select("*")
+    .order("business_date", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    const maybeMessage = (error as { message?: string }).message ?? "";
+    if (maybeMessage.includes("manual_session_details")) {
+      return [] as ManualSessionDetailRow[];
+    }
+    throw error;
+  }
+
+  return (data ?? []) as ManualSessionDetailRow[];
 }
 
 async function loadProductCosts(sourceSpreadsheetId: string) {
@@ -1091,6 +1125,7 @@ export async function syncTodayDashboardToGoogleSheets() {
   const allCashCounts = await loadAllCashCounts(supabase);
   const manualDailyReports = await loadManualDailyReports(supabase);
   const manualProductSales = await loadManualDailyProductSales(supabase);
+  const manualSessionDetails = await loadManualSessionDetails(supabase);
 
   const availableSheets = sourceSpreadsheetId ? await listSheetTitles(sourceSpreadsheetId) : [];
   const productCosts = sourceSpreadsheetId ? await loadProductCosts(sourceSpreadsheetId) : [];
@@ -1218,6 +1253,11 @@ export async function syncTodayDashboardToGoogleSheets() {
   const sortedSessions = [...allSessions].sort((a, b) =>
     String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""))
   );
+  const sortedManualSessions = [...manualSessionDetails].sort((a, b) => {
+    const dateCompare = a.business_date.localeCompare(b.business_date);
+    if (dateCompare !== 0) return dateCompare;
+    return String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""));
+  });
 
   await replaceSheetValues("每日摘要", [
     [
@@ -1328,6 +1368,21 @@ export async function syncTodayDashboardToGoogleSheets() {
       Number(session.guest_count ?? 0),
       session.order_status,
       session.payment_status,
+      session.payment_method ?? "",
+      Number(session.subtotal_amount ?? 0),
+      Number(session.discount_amount ?? 0),
+      Number(session.total_amount ?? 0),
+      session.customer_type ?? "",
+      session.customer_label ?? "",
+    ]),
+    ...sortedManualSessions.map((session) => [
+      session.id,
+      session.business_date,
+      session.session_number,
+      session.created_at ?? "",
+      Number(session.guest_count ?? 0),
+      session.order_status ?? "closed",
+      session.payment_status ?? "paid",
       session.payment_method ?? "",
       Number(session.subtotal_amount ?? 0),
       Number(session.discount_amount ?? 0),
