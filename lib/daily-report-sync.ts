@@ -282,6 +282,23 @@ async function loadCashCountForDate(
   return (data as CashCountRow | null) ?? null;
 }
 
+async function loadAllCashCounts(supabase: ReturnType<typeof getSupabaseServerClient>) {
+  const { data, error } = await supabase
+    .from("daily_cash_counts")
+    .select("*")
+    .order("business_date", { ascending: true });
+
+  if (error) {
+    const maybeMessage = (error as { message?: string }).message ?? "";
+    if (maybeMessage.includes("daily_cash_counts")) {
+      return [] as CashCountRow[];
+    }
+    throw error;
+  }
+
+  return (data ?? []) as CashCountRow[];
+}
+
 async function loadManualDailyReports(supabase: ReturnType<typeof getSupabaseServerClient>) {
   const { data, error } = await supabase
     .from("manual_daily_reports")
@@ -916,6 +933,7 @@ export async function syncTodayDashboardToGoogleSheets() {
 
   const { sessions: allSessions, orderItems: allOrderItems } = await loadAllSessionsAndItems(supabase);
   const cashCount = await loadCashCountForDate(supabase, businessDate);
+  const allCashCounts = await loadAllCashCounts(supabase);
   const manualDailyReports = await loadManualDailyReports(supabase);
   const manualProductSales = await loadManualDailyProductSales(supabase);
 
@@ -938,13 +956,14 @@ export async function syncTodayDashboardToGoogleSheets() {
   ).sort();
 
   const dailyMetrics: DailyMetric[] = [];
+  const cashCountByDate = new Map(allCashCounts.map((item) => [item.business_date, item]));
   for (const date of dailySessionDates) {
     const daySessions = allSessions.filter(
       (session) => formatBusinessDate(session.created_at ?? "") === date
     );
     const dayIds = new Set(daySessions.map((session) => session.id));
     const dayItems = allOrderItems.filter((item) => dayIds.has(item.session_id));
-    const dayCashCount = date === businessDate ? cashCount : null;
+    const dayCashCount = cashCountByDate.get(date) ?? null;
     const baseMetric = buildDailyMetric(date, daySessions, dayItems, productCosts, fixedExpenses, dayCashCount);
     const manualMetric = manualDailyReports.find((item) => item.business_date === date);
     dailyMetrics.push(mergeManualDailyMetric(baseMetric, manualMetric));
@@ -992,6 +1011,176 @@ export async function syncTodayDashboardToGoogleSheets() {
   const cumulativeProfit = allNetRevenue - allEstimatedCost - fixedExpenseTotal;
   const allGrossProfit = allRevenue - allEstimatedCost;
   const allGrossMargin = allRevenue > 0 ? allGrossProfit / allRevenue : "";
+  const allPaymentSummaryWithManual = buildPaymentSummary(allPaidSessions);
+
+  for (const manual of manualDailyReports) {
+    const cashAmount = Number(manual.cash_income ?? 0);
+    if (cashAmount > 0) {
+      const existing = allPaymentSummaryWithManual.get("現金") ?? {
+        count: 0,
+        grossAmount: 0,
+        feeAmount: 0,
+        netAmount: 0,
+      };
+      existing.count += 1;
+      existing.grossAmount += cashAmount;
+      existing.netAmount += cashAmount;
+      allPaymentSummaryWithManual.set("現金", existing);
+    }
+
+    const transferAmount = Number(manual.transfer_income ?? 0);
+    if (transferAmount > 0) {
+      const feeAmount = calculatePaymentFee(transferAmount, "歐付寶");
+      const existing = allPaymentSummaryWithManual.get("歐付寶") ?? {
+        count: 0,
+        grossAmount: 0,
+        feeAmount: 0,
+        netAmount: 0,
+      };
+      existing.count += 1;
+      existing.grossAmount += transferAmount;
+      existing.feeAmount += feeAmount;
+      existing.netAmount += transferAmount - feeAmount;
+      allPaymentSummaryWithManual.set("歐付寶", existing);
+    }
+
+    const otherAmount = Number(manual.other_income ?? 0);
+    if (otherAmount > 0) {
+      const existing = allPaymentSummaryWithManual.get("其他") ?? {
+        count: 0,
+        grossAmount: 0,
+        feeAmount: 0,
+        netAmount: 0,
+      };
+      existing.count += 1;
+      existing.grossAmount += otherAmount;
+      existing.netAmount += otherAmount;
+      allPaymentSummaryWithManual.set("其他", existing);
+    }
+  }
+
+  const sortedDailyMetrics = [...dailyMetrics].sort((a, b) => a.date.localeCompare(b.date));
+  const sortedSessions = [...allSessions].sort((a, b) =>
+    String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""))
+  );
+
+  await replaceSheetValues("每日摘要", [
+    [
+      "營業日期",
+      "今日營業額",
+      "今日來客數",
+      "今日訂單數",
+      "已付款訂單數",
+      "未付款訂單數",
+      "平均客單",
+      "招待總額",
+      "現金收入",
+      "金流手續費",
+      "淨收入",
+      "商品成本",
+      "商品毛利",
+      "毛利率",
+      "開店現金",
+      "關店現金",
+      "系統應有現金",
+      "對帳差異",
+      "更新時間",
+    ],
+    ...sortedDailyMetrics.map((item) => {
+      const dayCashCount = cashCountByDate.get(item.date);
+      const daySessions = allSessions.filter(
+        (session) => formatBusinessDate(session.created_at ?? "") === item.date
+      );
+      const dayPaidSessions = daySessions.filter((session) => session.payment_status === "paid");
+
+      return [
+        item.date,
+        item.productRevenue,
+        item.guestCount,
+        daySessions.length,
+        dayPaidSessions.length,
+        daySessions.length - dayPaidSessions.length,
+        dayPaidSessions.length > 0 ? Math.round(item.actualReceived / dayPaidSessions.length) : 0,
+        item.complimentary,
+        item.cashIncome,
+        item.paymentFees,
+        item.actualReceived - item.paymentFees,
+        item.productCost,
+        item.grossProfit,
+        item.actualReceived > 0 ? item.grossProfit / item.actualReceived : "",
+        dayCashCount?.opening_cash ?? "",
+        dayCashCount?.closing_cash ?? "",
+        dayCashCount ? Number(dayCashCount.opening_cash ?? 0) + item.cashIncome : "",
+        item.reconciliationDiff,
+        new Date().toISOString(),
+      ];
+    }),
+  ]);
+
+  await replaceSheetValues("現金清點", [
+    [
+      "營業日期",
+      "開店現金",
+      "開店清點時間",
+      "開店備註",
+      "關店現金",
+      "關店清點時間",
+      "關店備註",
+      "今日現金收入",
+      "系統應有現金",
+      "關帳差額",
+      "更新時間",
+    ],
+    ...allCashCounts.map((item) => {
+      const dayMetric = sortedDailyMetrics.find((metric) => metric.date === item.business_date);
+      return [
+        item.business_date,
+        item.opening_cash ?? "",
+        item.opening_counted_at ?? "",
+        item.opening_notes ?? "",
+        item.closing_cash ?? "",
+        item.closing_counted_at ?? "",
+        item.closing_notes ?? "",
+        dayMetric?.cashIncome ?? 0,
+        Number(item.opening_cash ?? 0) + Number(dayMetric?.cashIncome ?? 0),
+        dayMetric?.reconciliationDiff ?? "",
+        new Date().toISOString(),
+      ];
+    }),
+  ]);
+
+  await replaceSheetValues("訂單明細", [
+    [
+      "主單ID",
+      "營業日期",
+      "主單編號",
+      "建立時間",
+      "來客數",
+      "訂單狀態",
+      "付款狀態",
+      "付款方式",
+      "餐點小計",
+      "折扣金額",
+      "總計金額",
+      "客人類型",
+      "客人標記",
+    ],
+    ...sortedSessions.map((session) => [
+      session.id,
+      formatBusinessDate(session.created_at ?? ""),
+      session.session_number,
+      session.created_at ?? "",
+      Number(session.guest_count ?? 0),
+      session.order_status,
+      session.payment_status,
+      session.payment_method ?? "",
+      Number(session.subtotal_amount ?? 0),
+      Number(session.discount_amount ?? 0),
+      Number(session.total_amount ?? 0),
+      session.customer_type ?? "",
+      session.customer_label ?? "",
+    ]),
+  ]);
 
   await mergeRowsByKey(
     "每日摘要",
@@ -1134,6 +1323,46 @@ export async function syncTodayDashboardToGoogleSheets() {
     ["來源試算表", sourceSpreadsheetId || "尚未設定 GOOGLE_COST_SOURCE_SPREADSHEET_ID"],
     ["已掃描分頁", availableSheets.join("、") || "未提供來源成本表"],
     ["目前手續費規則", "歐付寶 2.45% / 每筆最低 1 元；現金與其他先視為 0 元"],
+  ]);
+
+  await replaceSheetValues("品項毛利", [
+    ["品項名稱", "類別", "累積銷售數量", "累積營業額", "單位成本", "估算總成本", "累積毛利", "毛利率", "備註"],
+    ...Array.from(allItemSummary.entries()).map(([productName, item]) => [
+      productName,
+      item.category,
+      item.quantity,
+      item.salesAmount,
+      item.unitCost,
+      item.estimatedCost,
+      item.grossProfit,
+      item.grossMargin,
+      item.notes,
+    ]),
+  ]);
+
+  await replaceSheetValues("付款方式淨收入", [
+    ["付款方式", "筆數", "收入金額", "手續費", "淨收入"],
+    ...Array.from(allPaymentSummaryWithManual.entries()).map(([method, item]) => [
+      method,
+      item.count,
+      item.grossAmount,
+      item.feeAmount,
+      item.netAmount,
+    ]),
+  ]);
+
+  await replaceSheetValues("每日毛利", [
+    ["營業日期", "營業額", "商品成本", "商品毛利", "毛利率", "金流手續費", "淨收入", "更新時間"],
+    ...sortedDailyMetrics.map((item) => [
+      item.date,
+      item.actualReceived,
+      item.productCost,
+      item.grossProfit,
+      item.actualReceived > 0 ? item.grossProfit / item.actualReceived : "",
+      item.paymentFees,
+      item.actualReceived - item.paymentFees,
+      new Date().toISOString(),
+    ]),
   ]);
 
   await syncSourceTemplateSheets(dailyMetrics, allItemSummary, monthlyMetrics, productCosts, fixedExpenses, procurements);
