@@ -43,6 +43,23 @@ type CashCountRow = {
   closing_counted_at: string | null;
 };
 
+type ManualDailyReportRow = {
+  business_date: string;
+  guest_count: number | null;
+  product_revenue: number | null;
+  cash_income: number | null;
+  transfer_income: number | null;
+  other_income: number | null;
+  tip_amount: number | null;
+  discount_amount: number | null;
+  complimentary_amount: number | null;
+  refund_amount: number | null;
+  product_cost: number | null;
+  reconciliation_diff: number | null;
+  rent_amount: number | null;
+  notes?: string | null;
+};
+
 type ProductCostItem = {
   name: string;
   category: string;
@@ -255,6 +272,23 @@ async function loadCashCountForDate(
   }
 
   return (data as CashCountRow | null) ?? null;
+}
+
+async function loadManualDailyReports(supabase: ReturnType<typeof getSupabaseServerClient>) {
+  const { data, error } = await supabase
+    .from("manual_daily_reports")
+    .select("*")
+    .order("business_date", { ascending: true });
+
+  if (error) {
+    const maybeMessage = (error as { message?: string }).message ?? "";
+    if (maybeMessage.includes("manual_daily_reports")) {
+      return [] as ManualDailyReportRow[];
+    }
+    throw error;
+  }
+
+  return (data ?? []) as ManualDailyReportRow[];
 }
 
 async function loadProductCosts(sourceSpreadsheetId: string) {
@@ -477,6 +511,46 @@ function buildDailyMetric(
     paymentFees,
     reconciliationDiff,
     rent,
+  };
+}
+
+function mergeManualDailyMetric(
+  base: DailyMetric,
+  manual: ManualDailyReportRow | undefined
+) {
+  if (!manual) return base;
+
+  const manualCashIncome = Number(manual.cash_income ?? 0);
+  const manualTransferIncome = Number(manual.transfer_income ?? 0);
+  const manualOtherIncome = Number(manual.other_income ?? 0);
+  const manualTip = Number(manual.tip_amount ?? 0);
+  const manualDiscount = Number(manual.discount_amount ?? 0);
+  const manualComplimentary = Number(manual.complimentary_amount ?? 0);
+  const manualRefund = Number(manual.refund_amount ?? 0);
+  const actualReceivedAddition =
+    manualCashIncome + manualTransferIncome + manualOtherIncome + manualTip - manualDiscount - manualRefund;
+  const productCost = base.productCost + Number(manual.product_cost ?? 0);
+  const paymentFees = base.paymentFees;
+
+  return {
+    ...base,
+    guestCount: base.guestCount + Number(manual.guest_count ?? 0),
+    productRevenue: base.productRevenue + Number(manual.product_revenue ?? 0),
+    cashIncome: base.cashIncome + manualCashIncome,
+    transferIncome: base.transferIncome + manualTransferIncome,
+    otherIncome: base.otherIncome + manualOtherIncome,
+    tip: base.tip + manualTip,
+    discount: base.discount + manualDiscount,
+    complimentary: base.complimentary + manualComplimentary,
+    refund: base.refund + manualRefund,
+    actualReceived: base.actualReceived + actualReceivedAddition,
+    productCost,
+    grossProfit: base.actualReceived + actualReceivedAddition - productCost - paymentFees,
+    reconciliationDiff:
+      base.reconciliationDiff === ""
+        ? Number(manual.reconciliation_diff ?? 0)
+        : Number(base.reconciliationDiff) + Number(manual.reconciliation_diff ?? 0),
+    rent: base.rent + Number(manual.rent_amount ?? 0),
   };
 }
 
@@ -774,6 +848,7 @@ export async function syncTodayDashboardToGoogleSheets() {
 
   const { sessions: allSessions, orderItems: allOrderItems } = await loadAllSessionsAndItems(supabase);
   const cashCount = await loadCashCountForDate(supabase, businessDate);
+  const manualDailyReports = await loadManualDailyReports(supabase);
 
   const availableSheets = sourceSpreadsheetId ? await listSheetTitles(sourceSpreadsheetId) : [];
   const productCosts = sourceSpreadsheetId ? await loadProductCosts(sourceSpreadsheetId) : [];
@@ -787,7 +862,10 @@ export async function syncTodayDashboardToGoogleSheets() {
   const orderItems = allOrderItems.filter((item) => sessionIds.has(item.session_id));
 
   const dailySessionDates = Array.from(
-    new Set(allSessions.map((session) => formatBusinessDate(session.created_at ?? "")))
+    new Set([
+      ...allSessions.map((session) => formatBusinessDate(session.created_at ?? "")),
+      ...manualDailyReports.map((item) => item.business_date),
+    ])
   ).sort();
 
   const dailyMetrics: DailyMetric[] = [];
@@ -798,7 +876,9 @@ export async function syncTodayDashboardToGoogleSheets() {
     const dayIds = new Set(daySessions.map((session) => session.id));
     const dayItems = allOrderItems.filter((item) => dayIds.has(item.session_id));
     const dayCashCount = date === businessDate ? cashCount : null;
-    dailyMetrics.push(buildDailyMetric(date, daySessions, dayItems, productCosts, fixedExpenses, dayCashCount));
+    const baseMetric = buildDailyMetric(date, daySessions, dayItems, productCosts, fixedExpenses, dayCashCount);
+    const manualMetric = manualDailyReports.find((item) => item.business_date === date);
+    dailyMetrics.push(mergeManualDailyMetric(baseMetric, manualMetric));
   }
 
   const todayMetric =

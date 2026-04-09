@@ -63,6 +63,22 @@ type CashCountRow = {
 };
 
 type CashBreakdown = Record<string, number>;
+type ManualDailyReportRow = {
+  business_date: string;
+  guest_count: number | null;
+  product_revenue: number | null;
+  cash_income: number | null;
+  transfer_income: number | null;
+  other_income: number | null;
+  tip_amount: number | null;
+  discount_amount: number | null;
+  complimentary_amount: number | null;
+  refund_amount: number | null;
+  product_cost: number | null;
+  reconciliation_diff: number | null;
+  rent_amount: number | null;
+  notes: string | null;
+};
 
 const CASH_DENOMINATIONS = [1000, 500, 100, 50, 10, 5, 1];
 
@@ -129,11 +145,12 @@ function calculateBreakdownTotal(breakdown: CashBreakdown) {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"overview" | "cash">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "cash" | "manual">("overview");
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSessionCard[]>([]);
   const [cashCount, setCashCount] = useState<CashCountRow | null>(null);
+  const [manualReports, setManualReports] = useState<ManualDailyReportRow[]>([]);
   const [openingBreakdown, setOpeningBreakdown] = useState<CashBreakdown>(createEmptyBreakdown);
   const [openingNotesInput, setOpeningNotesInput] = useState("");
   const [closingBreakdown, setClosingBreakdown] = useState<CashBreakdown>(createEmptyBreakdown);
@@ -141,6 +158,21 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingOpening, setIsSavingOpening] = useState(false);
   const [isSavingClosing, setIsSavingClosing] = useState(false);
+  const [isSavingManual, setIsSavingManual] = useState(false);
+  const [manualDate, setManualDate] = useState(todayIsoDate());
+  const [manualGuestCount, setManualGuestCount] = useState("0");
+  const [manualProductRevenue, setManualProductRevenue] = useState("0");
+  const [manualCashIncome, setManualCashIncome] = useState("0");
+  const [manualTransferIncome, setManualTransferIncome] = useState("0");
+  const [manualOtherIncome, setManualOtherIncome] = useState("0");
+  const [manualTipAmount, setManualTipAmount] = useState("0");
+  const [manualDiscountAmount, setManualDiscountAmount] = useState("0");
+  const [manualComplimentaryAmount, setManualComplimentaryAmount] = useState("0");
+  const [manualRefundAmount, setManualRefundAmount] = useState("0");
+  const [manualProductCost, setManualProductCost] = useState("0");
+  const [manualReconciliationDiff, setManualReconciliationDiff] = useState("0");
+  const [manualRentAmount, setManualRentAmount] = useState("0");
+  const [manualNotes, setManualNotes] = useState("");
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -221,6 +253,18 @@ export default function DashboardPage() {
         }
       }
 
+      const { data: manualData, error: manualError } = await supabase
+        .from("manual_daily_reports")
+        .select("*")
+        .order("business_date", { ascending: false });
+
+      if (manualError) {
+        const maybeMessage = (manualError as { message?: string }).message ?? "";
+        if (!maybeMessage.includes("manual_daily_reports")) {
+          throw manualError;
+        }
+      }
+
       setSessions(sessionsData ?? []);
       setOrderItems(itemsData);
       setActiveSessions(
@@ -234,6 +278,7 @@ export default function DashboardPage() {
         }))
       );
       setCashCount(cashData ?? null);
+      setManualReports(manualData ?? []);
       setOpeningBreakdown(normalizeBreakdown(cashData?.opening_breakdown));
       setOpeningNotesInput(cashData?.opening_notes ?? "");
       setClosingBreakdown(normalizeBreakdown(cashData?.closing_breakdown));
@@ -420,6 +465,48 @@ export default function DashboardPage() {
     }
   }
 
+  async function saveManualDailyReport() {
+    try {
+      setIsSavingManual(true);
+
+      const payload = {
+        business_date: manualDate,
+        guest_count: Number(manualGuestCount || 0),
+        product_revenue: Number(manualProductRevenue || 0),
+        cash_income: Number(manualCashIncome || 0),
+        transfer_income: Number(manualTransferIncome || 0),
+        other_income: Number(manualOtherIncome || 0),
+        tip_amount: Number(manualTipAmount || 0),
+        discount_amount: Number(manualDiscountAmount || 0),
+        complimentary_amount: Number(manualComplimentaryAmount || 0),
+        refund_amount: Number(manualRefundAmount || 0),
+        product_cost: Number(manualProductCost || 0),
+        reconciliation_diff: Number(manualReconciliationDiff || 0),
+        rent_amount: Number(manualRentAmount || 0),
+        notes: manualNotes.trim() || null,
+      };
+
+      const { error } = await supabase
+        .from("manual_daily_reports")
+        .upsert(payload, { onConflict: "business_date" });
+
+      if (error) throw error;
+
+      alert("歷史日結已儲存");
+      await loadDashboard();
+    } catch (error) {
+      console.error("Failed to save manual daily report", error);
+      const maybeMessage = error as { message?: string };
+      if (maybeMessage?.message?.includes("manual_daily_reports")) {
+        alert("請先在 Supabase 執行 supabase/20260409_manual_daily_reports.sql");
+        return;
+      }
+      alert("儲存歷史日結失敗");
+    } finally {
+      setIsSavingManual(false);
+    }
+  }
+
   if (isLoading) {
     return <main className="pos-shell p-6 text-slate-600">讀取中...</main>;
   }
@@ -488,6 +575,15 @@ export default function DashboardPage() {
               }`}
             >
               現金清點
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("manual")}
+              className={`h-11 rounded-2xl px-4 text-sm font-semibold ${
+                activeTab === "manual" ? "bg-violet-500 text-white" : "bg-slate-100 text-slate-700"
+              }`}
+            >
+              歷史補登
             </button>
           </div>
         </header>
@@ -591,7 +687,7 @@ export default function DashboardPage() {
               </div>
             </Panel>
           </section>
-        ) : (
+        ) : activeTab === "cash" ? (
           <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[1.32fr_0.68fr]">
             <Panel title="開店與關帳現金">
               <div className="space-y-3">
@@ -664,6 +760,83 @@ export default function DashboardPage() {
               </div>
             </Panel>
           </section>
+        ) : (
+          <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[1.1fr_0.9fr]">
+            <Panel title="歷史日結補登">
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="日期">
+                  <input type="date" value={manualDate} onChange={(e) => setManualDate(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+                <Field label="客人數">
+                  <input type="number" min="0" value={manualGuestCount} onChange={(e) => setManualGuestCount(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+                <Field label="商品營業額">
+                  <input type="number" min="0" value={manualProductRevenue} onChange={(e) => setManualProductRevenue(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+                <Field label="商品成本">
+                  <input type="number" min="0" value={manualProductCost} onChange={(e) => setManualProductCost(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+                <Field label="現金收入">
+                  <input type="number" min="0" value={manualCashIncome} onChange={(e) => setManualCashIncome(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+                <Field label="轉帳收入">
+                  <input type="number" min="0" value={manualTransferIncome} onChange={(e) => setManualTransferIncome(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+                <Field label="其他收入">
+                  <input type="number" min="0" value={manualOtherIncome} onChange={(e) => setManualOtherIncome(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+                <Field label="小費">
+                  <input type="number" min="0" value={manualTipAmount} onChange={(e) => setManualTipAmount(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+                <Field label="折扣">
+                  <input type="number" min="0" value={manualDiscountAmount} onChange={(e) => setManualDiscountAmount(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+                <Field label="招待/未收">
+                  <input type="number" min="0" value={manualComplimentaryAmount} onChange={(e) => setManualComplimentaryAmount(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+                <Field label="退款">
+                  <input type="number" min="0" value={manualRefundAmount} onChange={(e) => setManualRefundAmount(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+                <Field label="對帳差異">
+                  <input type="number" value={manualReconciliationDiff} onChange={(e) => setManualReconciliationDiff(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+                <Field label="場租">
+                  <input type="number" min="0" value={manualRentAmount} onChange={(e) => setManualRentAmount(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-violet-400" />
+                </Field>
+              </div>
+              <Field label="備註">
+                <textarea value={manualNotes} onChange={(e) => setManualNotes(e.target.value)} rows={3} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-violet-400" placeholder="例如：4/4 開幕試營運，未使用 POS 開單" />
+              </Field>
+              <button type="button" onClick={saveManualDailyReport} disabled={isSavingManual} className="mt-4 h-12 w-full rounded-2xl bg-violet-500 text-sm font-semibold text-white disabled:opacity-50">
+                {isSavingManual ? "儲存中..." : "儲存歷史日結"}
+              </button>
+            </Panel>
+
+            <Panel title="已補登紀錄">
+              {manualReports.length === 0 ? (
+                <Empty text="尚未補登任何歷史日結" />
+              ) : (
+                <div className="space-y-3">
+                  {manualReports.map((report) => (
+                    <div key={report.business_date} className="rounded-[24px] border border-slate-200 bg-white p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm text-slate-500">{report.business_date}</p>
+                          <p className="text-lg font-bold text-slate-900">實收 ${Number(report.cash_income ?? 0) + Number(report.transfer_income ?? 0) + Number(report.other_income ?? 0) + Number(report.tip_amount ?? 0) - Number(report.discount_amount ?? 0) - Number(report.refund_amount ?? 0)}</p>
+                        </div>
+                        <p className="text-sm font-semibold text-slate-600">{report.guest_count ?? 0} 人</p>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <Mini label="商品營業額" value={`$${report.product_revenue ?? 0}`} />
+                        <Mini label="商品成本" value={`$${report.product_cost ?? 0}`} />
+                      </div>
+                      <p className="mt-3 text-sm text-slate-500">{report.notes || "無備註"}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Panel>
+          </section>
         )}
       </div>
     </main>
@@ -699,6 +872,15 @@ function Mini({ label, value }: { label: string; value: string }) {
 
 function Empty({ text }: { text: string }) {
   return <div className="rounded-[24px] bg-slate-50 p-4 text-slate-500">{text}</div>;
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm text-slate-500">{label}</span>
+      {children}
+    </label>
+  );
 }
 
 function CashSummaryCard({
