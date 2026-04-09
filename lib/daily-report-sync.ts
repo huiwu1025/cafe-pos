@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import {
+  batchUpdateSpreadsheet,
+  getSheetIdByTitle,
   listSheetTitles,
   mergeRowsByKey,
   readSheetValues,
@@ -152,6 +154,16 @@ type MonthlyMetric = {
   netCashFlow: number;
 };
 
+type SheetStyleConfig = {
+  title: string;
+  frozenRows?: number;
+  headerRowIndex?: number;
+  currencyColumns?: number[];
+  percentColumns?: number[];
+  dateColumns?: number[];
+  autoResizeColumnCount?: number;
+};
+
 const TAIPEI_TIMEZONE = "Asia/Taipei";
 const SOURCE_PRODUCT_COST_SHEET = "品項成本表";
 const SOURCE_PROCUREMENT_SHEET = "成本控管表";
@@ -212,6 +224,17 @@ function toPercentValue(value: string | number | null | undefined) {
 
 function normalizeProductName(name: string) {
   return name.trim();
+}
+
+function columnToLetter(columnNumber: number) {
+  let current = columnNumber;
+  let result = "";
+  while (current > 0) {
+    const remainder = (current - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    current = Math.floor((current - 1) / 26);
+  }
+  return result;
 }
 
 function isTruthyPaid(value: string) {
@@ -926,6 +949,138 @@ async function syncSourceTemplateSheets(
   );
 }
 
+async function applySheetStyles(configs: SheetStyleConfig[]) {
+  const requests: Record<string, unknown>[] = [];
+
+  for (const config of configs) {
+    const sheetId = await getSheetIdByTitle(config.title);
+    if (sheetId == null) continue;
+
+    if (config.frozenRows != null) {
+      requests.push({
+        updateSheetProperties: {
+          properties: {
+            sheetId,
+            gridProperties: {
+              frozenRowCount: config.frozenRows,
+            },
+          },
+          fields: "gridProperties.frozenRowCount",
+        },
+      });
+    }
+
+    if (config.headerRowIndex != null) {
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: config.headerRowIndex,
+            endRowIndex: config.headerRowIndex + 1,
+          },
+          cell: {
+            userEnteredFormat: {
+              backgroundColor: {
+                red: 0.11,
+                green: 0.29,
+                blue: 0.5,
+              },
+              textFormat: {
+                foregroundColor: { red: 1, green: 1, blue: 1 },
+                bold: true,
+              },
+              horizontalAlignment: "CENTER",
+            },
+          },
+          fields:
+            "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
+        },
+      });
+    }
+
+    for (const columnIndex of config.currencyColumns ?? []) {
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: (config.headerRowIndex ?? 0) + 1,
+            startColumnIndex: columnIndex,
+            endColumnIndex: columnIndex + 1,
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: "CURRENCY",
+                pattern: "\"NT$\"#,##0",
+              },
+            },
+          },
+          fields: "userEnteredFormat.numberFormat",
+        },
+      });
+    }
+
+    for (const columnIndex of config.percentColumns ?? []) {
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: (config.headerRowIndex ?? 0) + 1,
+            startColumnIndex: columnIndex,
+            endColumnIndex: columnIndex + 1,
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: "PERCENT",
+                pattern: "0.0%",
+              },
+            },
+          },
+          fields: "userEnteredFormat.numberFormat",
+        },
+      });
+    }
+
+    for (const columnIndex of config.dateColumns ?? []) {
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: (config.headerRowIndex ?? 0) + 1,
+            startColumnIndex: columnIndex,
+            endColumnIndex: columnIndex + 1,
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: "DATE",
+                pattern: "yyyy-mm-dd",
+              },
+            },
+          },
+          fields: "userEnteredFormat.numberFormat",
+        },
+      });
+    }
+
+    if (config.autoResizeColumnCount != null) {
+      requests.push({
+        autoResizeDimensions: {
+          dimensions: {
+            sheetId,
+            dimension: "COLUMNS",
+            startIndex: 0,
+            endIndex: config.autoResizeColumnCount,
+          },
+        },
+      });
+    }
+  }
+
+  await batchUpdateSpreadsheet(requests);
+}
+
 export async function syncTodayDashboardToGoogleSheets() {
   const supabase = getSupabaseServerClient();
   const sourceSpreadsheetId = getCostSpreadsheetId();
@@ -1366,6 +1521,176 @@ export async function syncTodayDashboardToGoogleSheets() {
   ]);
 
   await syncSourceTemplateSheets(dailyMetrics, allItemSummary, monthlyMetrics, productCosts, fixedExpenses, procurements);
+
+  await replaceSheetValues("品項成本表", [
+    ["品項名稱", "類別", "售價", "單位成本", "單杯/份毛利", "單杯/份毛利率", "是否主打", "備註"],
+    ...productCosts.map((item) => [
+      item.name,
+      item.category,
+      item.price,
+      item.unitCost,
+      item.grossProfit,
+      item.grossMargin,
+      item.featured,
+      item.notes,
+    ]),
+  ]);
+
+  await replaceSheetValues("固定支出", [
+    ["日期", "月份", "支出項目", "類型", "金額", "是否已付款", "備註"],
+    ...fixedExpenses.map((item) => [
+      item.date,
+      item.month,
+      item.item,
+      item.type,
+      item.amount,
+      item.isPaid ? "是" : "否",
+      item.note,
+    ]),
+  ]);
+
+  await replaceSheetValues("進貨耗材", [
+    ["日期", "月份", "品項", "類型", "單價", "數量", "總金額", "供應商", "備註"],
+    ...procurements.map((item) => [
+      item.date,
+      item.month,
+      item.item,
+      item.type,
+      item.unitPrice,
+      item.quantity,
+      item.totalAmount,
+      item.supplier,
+      item.note,
+    ]),
+  ]);
+
+  const overviewRows = sortedDailyMetrics.map((item, index) => {
+    const row = index + 2;
+    return [
+      item.date,
+      `=TEXT(A${row},"yyyy-mm")`,
+      item.guestCount,
+      item.productRevenue,
+      item.cashIncome,
+      item.transferIncome,
+      item.otherIncome,
+      item.tip,
+      item.discount,
+      item.complimentary,
+      item.refund,
+      `=E${row}+F${row}+G${row}+H${row}-I${row}-K${row}`,
+      item.productCost,
+      `=L${row}-M${row}`,
+      item.reconciliationDiff,
+      item.rent,
+      item.paymentFees,
+      `=L${row}-Q${row}`,
+    ];
+  });
+
+  await replaceSheetValues("每日總覽", [
+    [
+      "日期",
+      "月份",
+      "客人數",
+      "商品營業額",
+      "現金收入",
+      "轉帳收入",
+      "其他收入",
+      "小費",
+      "折扣",
+      "招待/未收",
+      "退款",
+      "實收金額",
+      "商品成本",
+      "當日毛利",
+      "對帳差異",
+      "場租",
+      "手續費",
+      "淨收入",
+    ],
+    ...overviewRows,
+  ]);
+
+  const itemEntries = Array.from(allItemSummary.entries()).sort(
+    (a, b) => b[1].grossProfit - a[1].grossProfit || b[1].quantity - a[1].quantity
+  );
+  const itemAnalysisRows = itemEntries.map(([productName, item], index) => {
+    const row = index + 6;
+    return [
+      productName,
+      `=IFERROR(VLOOKUP(A${row},品項成本表!A:H,2,FALSE),"")`,
+      `=IFERROR(VLOOKUP(A${row},品項成本表!A:H,3,FALSE),"")`,
+      `=IFERROR(VLOOKUP(A${row},品項成本表!A:H,4,FALSE),0)`,
+      item.quantity,
+      item.salesAmount,
+      `=E${row}*D${row}`,
+      `=F${row}-G${row}`,
+      `=IF(F${row}=0,"",H${row}/F${row})`,
+      `=IFERROR(VLOOKUP(A${row},品項成本表!A:H,7,FALSE),"")`,
+      `=IF(H${row}=\"\",\"\",RANK(H${row},$H$6:$H$${itemEntries.length + 5},0))`,
+      `=IF(E${row}=0,"待觀察",IF(H${row}>0,"主力商品","待觀察"))`,
+    ];
+  });
+
+  await replaceSheetValues("品項分析", [
+    ["最賺品項", `=IFERROR(INDEX(A6:A,MATCH(MAX(H6:H),H6:H,0)),"")`, "", "最熱銷品項", `=IFERROR(INDEX(A6:A,MATCH(MAX(E6:E),E6:E,0)),"")`],
+    [],
+    [],
+    [],
+    ["品項名稱", "類別", "售價", "單位成本", "銷售數量", "商品營業額", "商品成本", "毛利", "毛利率", "是否主打", "毛利排名", "建議"],
+    ...itemAnalysisRows,
+  ]);
+
+  const currentYear = todayIsoDate().slice(0, 4);
+  const monthRows = Array.from({ length: 12 }, (_, index) => {
+    const month = `${currentYear}-${String(index + 1).padStart(2, "0")}`;
+    const row = index + 9;
+    return [
+      month,
+      `=SUMIF(每日總覽!B:B,A${row},每日總覽!C:C)`,
+      `=SUMIF(每日總覽!B:B,A${row},每日總覽!D:D)`,
+      `=SUMIF(每日總覽!B:B,A${row},每日總覽!H:H)`,
+      `=SUMIF(每日總覽!B:B,A${row},每日總覽!G:G)+SUMIF(每日總覽!B:B,A${row},每日總覽!F:F)`,
+      `=SUMIF(每日總覽!B:B,A${row},每日總覽!I:I)`,
+      `=SUMIF(每日總覽!B:B,A${row},每日總覽!J:J)`,
+      `=SUMIF(每日總覽!B:B,A${row},每日總覽!K:K)`,
+      `=SUMIF(每日總覽!B:B,A${row},每日總覽!L:L)`,
+      `=SUMIF(每日總覽!B:B,A${row},每日總覽!M:M)`,
+      `=SUMIF(進貨耗材!B:B,A${row},進貨耗材!G:G)`,
+      `=SUMIFS(固定支出!E:E,固定支出!B:B,A${row},固定支出!D:D,"<>場租")`,
+      `=SUMIF(每日總覽!B:B,A${row},每日總覽!P:P)`,
+      `=I${row}-J${row}-K${row}-L${row}-M${row}-SUMIF(每日總覽!B:B,A${row},每日總覽!Q:Q)`,
+      `=I${row}-K${row}-L${row}-M${row}`,
+    ];
+  });
+
+  await replaceSheetValues("月總表", [
+    ["年份", currentYear, "", "本年度場租累計", `=SUM(M9:M20)`],
+    ["", "", "", "累計固定/其他支出", `=SUM(L9:L20)`],
+    ["", "", "", "累計進貨/耗材支出", `=SUM(K9:K20)`],
+    ["", "", "", "累計實收", `=SUM(I9:I20)`],
+    ["", "", "", "累計淨收入", `=SUM(N9:N20)`],
+    [],
+    [],
+    ["月份", "客人數", "商品營業額", "小費", "其他收入", "折扣", "招待/未收", "退款", "實收金額", "商品成本(依銷售)", "進貨/耗材支出", "固定/其他支出", "場租", "淨收入", "淨現金流"],
+    ...monthRows,
+  ]);
+
+  await applySheetStyles([
+    { title: "每日摘要", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [1, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17], percentColumns: [13], autoResizeColumnCount: 19 },
+    { title: "現金清點", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [1, 4, 7, 8, 9], autoResizeColumnCount: 11 },
+    { title: "訂單明細", frozenRows: 1, headerRowIndex: 0, dateColumns: [1], currencyColumns: [8, 9, 10], autoResizeColumnCount: 13 },
+    { title: "品項成本表", frozenRows: 1, headerRowIndex: 0, currencyColumns: [2, 3, 4], percentColumns: [5], autoResizeColumnCount: 8 },
+    { title: "固定支出", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [4], autoResizeColumnCount: 7 },
+    { title: "進貨耗材", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [4, 6], autoResizeColumnCount: 9 },
+    { title: "每日總覽", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], autoResizeColumnCount: 18 },
+    { title: "品項分析", frozenRows: 5, headerRowIndex: 4, currencyColumns: [2, 3, 5, 6, 7], percentColumns: [8], autoResizeColumnCount: 12 },
+    { title: "月總表", frozenRows: 8, headerRowIndex: 7, currencyColumns: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], autoResizeColumnCount: 15 },
+    { title: "品項毛利", frozenRows: 1, headerRowIndex: 0, currencyColumns: [3, 4, 5, 6], percentColumns: [7], autoResizeColumnCount: 9 },
+    { title: "付款方式淨收入", frozenRows: 1, headerRowIndex: 0, currencyColumns: [2, 3, 4], autoResizeColumnCount: 5 },
+    { title: "每日毛利", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [1, 2, 3, 5, 6], percentColumns: [4], autoResizeColumnCount: 8 },
+  ]);
 
   return {
     businessDate,

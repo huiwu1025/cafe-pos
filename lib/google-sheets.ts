@@ -106,6 +106,36 @@ export async function listSheetTitles(spreadsheetId?: string) {
   return metadata.sheets?.map((sheet) => sheet.properties?.title).filter(Boolean) as string[];
 }
 
+export async function getSheetIdByTitle(title: string, spreadsheetId?: string) {
+  const metadata = (await sheetsRequest(
+    "?fields=sheets.properties.sheetId,sheets.properties.title",
+    undefined,
+    spreadsheetId
+  )) as {
+    sheets?: { properties?: { sheetId?: number; title?: string } }[];
+  };
+
+  return (
+    metadata.sheets?.find((sheet) => sheet.properties?.title === title)?.properties?.sheetId ?? null
+  );
+}
+
+export async function batchUpdateSpreadsheet(
+  requests: Record<string, unknown>[],
+  spreadsheetId?: string
+) {
+  if (requests.length === 0) return;
+
+  await sheetsRequest(
+    ":batchUpdate",
+    {
+      method: "POST",
+      body: JSON.stringify({ requests }),
+    },
+    spreadsheetId
+  );
+}
+
 export async function ensureSheetExists(title: string, spreadsheetId?: string) {
   const titles = await listSheetTitles(spreadsheetId);
   const exists = titles.includes(title);
