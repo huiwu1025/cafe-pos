@@ -286,7 +286,8 @@ export default function OrdersPage() {
                 filteredSessions.map((session) => (
                   <article
                     key={session.id}
-                    className="flex min-h-[210px] flex-col rounded-[24px] border border-slate-200 bg-white p-4"
+                    onClick={() => router.push(`/session/${session.id}`)}
+                    className="flex min-h-[210px] cursor-pointer flex-col rounded-[24px] border border-slate-200 bg-white p-4 transition hover:border-sky-300 hover:shadow-sm"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -330,7 +331,10 @@ export default function OrdersPage() {
                           {hasComplimentaryItems(session) ? "含招待品項" : "無招待"}
                         </p>
                         <button
-                          onClick={() => router.push(`/session/${session.id}`)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            router.push(`/session/${session.id}`);
+                          }}
                           className="mt-2 h-10 rounded-2xl bg-sky-500 px-4 text-sm font-semibold text-white"
                         >
                           查看 / 編輯
