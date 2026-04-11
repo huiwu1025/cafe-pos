@@ -184,6 +184,9 @@ type SheetStyleConfig = {
   headerRowHeight?: number;
   bodyRowHeight?: number;
   columnWidths?: Array<number | null | undefined>;
+  leftAlignColumns?: number[];
+  centerAlignColumns?: number[];
+  rightAlignColumns?: number[];
   columnBackgrounds?: Array<{
     columns: number[];
     color: { red: number; green: number; blue: number };
@@ -1098,6 +1101,23 @@ async function applySheetStyles(configs: SheetStyleConfig[]) {
       });
     }
 
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: (config.headerRowIndex ?? 0) + 1,
+          endRowIndex: 200,
+        },
+        cell: {
+          userEnteredFormat: {
+            verticalAlignment: "MIDDLE",
+            wrapStrategy: "WRAP",
+          },
+        },
+        fields: "userEnteredFormat(verticalAlignment,wrapStrategy)",
+      },
+    });
+
     for (const [columnIndex, pixelSize] of (config.columnWidths ?? []).entries()) {
       if (pixelSize == null) continue;
       requests.push({
@@ -1136,6 +1156,66 @@ async function applySheetStyles(configs: SheetStyleConfig[]) {
           },
         });
       }
+    }
+
+    for (const columnIndex of config.leftAlignColumns ?? []) {
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: (config.headerRowIndex ?? 0) + 1,
+            endRowIndex: 200,
+            startColumnIndex: columnIndex,
+            endColumnIndex: columnIndex + 1,
+          },
+          cell: {
+            userEnteredFormat: {
+              horizontalAlignment: "LEFT",
+            },
+          },
+          fields: "userEnteredFormat.horizontalAlignment",
+        },
+      });
+    }
+
+    for (const columnIndex of config.centerAlignColumns ?? []) {
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: (config.headerRowIndex ?? 0) + 1,
+            endRowIndex: 200,
+            startColumnIndex: columnIndex,
+            endColumnIndex: columnIndex + 1,
+          },
+          cell: {
+            userEnteredFormat: {
+              horizontalAlignment: "CENTER",
+            },
+          },
+          fields: "userEnteredFormat.horizontalAlignment",
+        },
+      });
+    }
+
+    for (const columnIndex of config.rightAlignColumns ?? []) {
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: (config.headerRowIndex ?? 0) + 1,
+            endRowIndex: 200,
+            startColumnIndex: columnIndex,
+            endColumnIndex: columnIndex + 1,
+          },
+          cell: {
+            userEnteredFormat: {
+              horizontalAlignment: "RIGHT",
+            },
+          },
+          fields: "userEnteredFormat.horizontalAlignment",
+        },
+      });
     }
 
     for (const columnIndex of config.currencyColumns ?? []) {
@@ -1912,6 +1992,9 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 42,
       bodyRowHeight: 34,
       columnWidths: [140, 130, 120, 120, 135, 135, 135, 125, 125, 125, 125, 125, 125, 120, 125, 125, 125, 125, 220],
+      leftAlignColumns: [18],
+      centerAlignColumns: [0, 2, 3, 4, 5, 6, 13],
+      rightAlignColumns: [1, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17],
       columnBackgrounds: [
         { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [1, 2, 3, 4, 5, 6], color: { red: 0.95, green: 0.97, blue: 0.93 } },
@@ -1930,6 +2013,9 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 42,
       bodyRowHeight: 34,
       columnWidths: [135, 125, 240, 190, 125, 240, 190, 125, 125, 125, 220],
+      leftAlignColumns: [2, 3, 5, 6, 10],
+      centerAlignColumns: [0],
+      rightAlignColumns: [1, 4, 7, 8, 9],
       columnBackgrounds: [
         { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [1, 4, 7, 8, 9], color: { red: 1, green: 0.96, blue: 0.9 } },
@@ -1946,6 +2032,9 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 42,
       bodyRowHeight: 34,
       columnWidths: [210, 140, 210, 180, 110, 120, 150, 150, 170, 230, 130, 130, 130, 135, 135],
+      leftAlignColumns: [0, 2, 6, 7, 8, 9],
+      centerAlignColumns: [1, 3, 4, 5, 13, 14],
+      rightAlignColumns: [10, 11, 12],
       columnBackgrounds: [
         { columns: [0, 1, 2], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [3, 4, 5, 6, 7, 8], color: { red: 0.95, green: 0.97, blue: 0.93 } },
@@ -1963,6 +2052,9 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 42,
       bodyRowHeight: 34,
       columnWidths: [220, 150, 130, 130, 140, 125, 125, 240],
+      leftAlignColumns: [0, 1, 7],
+      centerAlignColumns: [6],
+      rightAlignColumns: [2, 3, 4, 5],
       columnBackgrounds: [
         { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [2, 3, 4], color: { red: 1, green: 0.96, blue: 0.9 } },
@@ -1980,6 +2072,9 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 42,
       bodyRowHeight: 34,
       columnWidths: [135, 125, 260, 150, 130, 130, 260],
+      leftAlignColumns: [2, 3, 6],
+      centerAlignColumns: [0, 1, 5],
+      rightAlignColumns: [4],
       columnBackgrounds: [
         { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [2, 3], color: { red: 0.95, green: 0.97, blue: 0.93 } },
@@ -1997,6 +2092,9 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 42,
       bodyRowHeight: 34,
       columnWidths: [135, 125, 210, 140, 125, 105, 135, 220, 260],
+      leftAlignColumns: [2, 3, 7, 8],
+      centerAlignColumns: [0, 1, 5],
+      rightAlignColumns: [4, 6],
       columnBackgrounds: [
         { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [2, 3], color: { red: 0.95, green: 0.97, blue: 0.93 } },
@@ -2014,6 +2112,8 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 44,
       bodyRowHeight: 36,
       columnWidths: [145, 125, 105, 145, 130, 130, 130, 115, 115, 130, 115, 145, 135, 145, 130, 120, 120, 145],
+      centerAlignColumns: [0, 1, 2, 14],
+      rightAlignColumns: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17],
       columnBackgrounds: [
         { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [2], color: { red: 0.95, green: 0.97, blue: 0.93 } },
@@ -2032,6 +2132,9 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 44,
       bodyRowHeight: 36,
       columnWidths: [220, 150, 130, 130, 115, 145, 145, 145, 120, 125, 120, 180],
+      leftAlignColumns: [0, 1, 11],
+      centerAlignColumns: [4, 9, 10],
+      rightAlignColumns: [2, 3, 5, 6, 7, 8],
       columnBackgrounds: [
         { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [2, 3, 5, 6, 7], color: { red: 1, green: 0.96, blue: 0.9 } },
@@ -2049,6 +2152,8 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 44,
       bodyRowHeight: 36,
       columnWidths: [125, 105, 145, 115, 130, 115, 125, 115, 145, 145, 145, 145, 120, 145, 145],
+      centerAlignColumns: [0, 1],
+      rightAlignColumns: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
       columnBackgrounds: [
         { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [1], color: { red: 0.95, green: 0.97, blue: 0.93 } },
@@ -2066,6 +2171,9 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 42,
       bodyRowHeight: 34,
       columnWidths: [220, 150, 115, 145, 130, 145, 145, 120, 220],
+      leftAlignColumns: [0, 1, 8],
+      centerAlignColumns: [2],
+      rightAlignColumns: [3, 4, 5, 6, 7],
       columnBackgrounds: [
         { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [2, 3, 4, 5, 6], color: { red: 1, green: 0.96, blue: 0.9 } },
@@ -2082,6 +2190,9 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 42,
       bodyRowHeight: 34,
       columnWidths: [190, 110, 145, 145, 145],
+      leftAlignColumns: [0],
+      centerAlignColumns: [1],
+      rightAlignColumns: [2, 3, 4],
       columnBackgrounds: [
         { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [1], color: { red: 0.95, green: 0.97, blue: 0.93 } },
@@ -2099,6 +2210,9 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 42,
       bodyRowHeight: 34,
       columnWidths: [145, 145, 145, 145, 120, 145, 145, 210],
+      centerAlignColumns: [0],
+      rightAlignColumns: [1, 2, 3, 4, 5, 6],
+      leftAlignColumns: [7],
       columnBackgrounds: [
         { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [1, 2, 3, 5, 6], color: { red: 1, green: 0.96, blue: 0.9 } },
@@ -2114,6 +2228,9 @@ export async function syncTodayDashboardToGoogleSheets() {
       headerRowHeight: 42,
       bodyRowHeight: 34,
       columnWidths: [170, 120, 170, 170, 170, 145],
+      leftAlignColumns: [0],
+      centerAlignColumns: [1],
+      rightAlignColumns: [2, 3, 4, 5],
       columnBackgrounds: [
         { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [1], color: { red: 0.95, green: 0.97, blue: 0.93 } },
