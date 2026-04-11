@@ -266,8 +266,14 @@ function toPercentValue(value: string | number | null | undefined) {
   return parsed <= 1 ? parsed : parsed / 100;
 }
 
+const PRODUCT_NAME_ALIASES = new Map<string, string>([
+  ["咖啡歐蕾", "日式咖啡歐蕾"],
+  ["微醺奶茶舊版", "微醺奶茶"],
+]);
+
 function normalizeProductName(name: string) {
-  return name.trim();
+  const normalized = name.trim().replace(/\s+/g, " ");
+  return PRODUCT_NAME_ALIASES.get(normalized) ?? normalized;
 }
 
 function buildSalesDetailRows(
