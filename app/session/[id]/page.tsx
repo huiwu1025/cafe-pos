@@ -19,6 +19,7 @@ type SessionData = {
   tip_amount?: number | null;
   amount_received?: number | null;
   change_amount?: number | null;
+  paid_at?: string | null;
 };
 
 type Product = {
@@ -104,6 +105,18 @@ function formatSeatLabel(seatCodes: string[]) {
   return seatCodes.map((seat) => `${seat}桌`).join("、");
 }
 
+function appendTransferNote(existingLabel: string | null | undefined, fromSeats: string[], toSeats: string[]) {
+  const base = (existingLabel ?? "").trim();
+  const timestamp = new Date().toLocaleTimeString("zh-TW", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const transferNote = `轉桌 ${formatSeatLabel(fromSeats)} → ${formatSeatLabel(toSeats)} ${timestamp}`;
+  if (!base) return transferNote;
+  return `${base} / ${transferNote}`;
+}
+
 export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
@@ -125,6 +138,7 @@ export default function SessionPage() {
 
   const [customerMemo, setCustomerMemo] = useState("");
   const [isSavingCustomerLabel, setIsSavingCustomerLabel] = useState(false);
+  const [isSavingGuestCount, setIsSavingGuestCount] = useState(false);
 
   const [paymentMethod, setPaymentMethod] = useState("現金");
   const [isSavingPaymentMethod, setIsSavingPaymentMethod] = useState(false);
@@ -830,6 +844,39 @@ export default function SessionPage() {
     }
   }
 
+  async function updateGuestCount(nextGuestCount: number) {
+    if (!session || isLocked) return;
+
+    const normalized = Math.max(1, nextGuestCount);
+
+    try {
+      setIsSavingGuestCount(true);
+
+      const { error } = await supabase
+        .from("dining_sessions")
+        .update({
+          guest_count: normalized,
+        })
+        .eq("id", sessionId);
+
+      if (error) throw error;
+
+      setSession((prev) =>
+        prev
+          ? {
+              ...prev,
+              guest_count: normalized,
+            }
+          : prev
+      );
+    } catch (error) {
+      console.error("更新來客數失敗：", error);
+      alert("更新來客數失敗");
+    } finally {
+      setIsSavingGuestCount(false);
+    }
+  }
+
   function toggleTransferSeat(seatCode: string) {
     if (currentSeatCodes.length <= 1 || !isCurrentBarSession) {
       setTransferSeatCodes([seatCode]);
@@ -942,9 +989,19 @@ export default function SessionPage() {
       );
       if (insertError) throw insertError;
 
+      const nextCustomerLabel = appendTransferNote(session?.customer_label, currentSeatCodes, transferSeatCodes);
+      const { error: updateSessionError } = await supabase
+        .from("dining_sessions")
+        .update({
+          customer_label: nextCustomerLabel,
+        })
+        .eq("id", sessionId);
+      if (updateSessionError) throw updateSessionError;
+
+      setCustomerMemo(nextCustomerLabel);
       setTransferSeatCodes([]);
       setShowTransferSeatModal(false);
-      await loadSeatContext();
+      await Promise.all([loadSeatContext(), loadSession()]);
       alert(`已轉桌到 ${formatSeatLabel(transferSeatCodes)}`);
     } catch (error) {
       console.error("轉桌失敗：", error);
@@ -1146,6 +1203,34 @@ export default function SessionPage() {
                     >
                       {isSavingPaymentMethod ? "儲存中..." : "儲存付款方式"}
                     </button>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 p-4">
+                    <label className="mb-3 block text-sm font-medium text-gray-600">來客數調整</label>
+                    <div className="grid grid-cols-[52px_minmax(0,1fr)_52px] gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updateGuestCount(session.guest_count - 1)}
+                        disabled={isLocked || isSavingGuestCount || session.guest_count <= 1}
+                        className="h-11 rounded-2xl bg-slate-200 text-lg font-bold text-slate-800 disabled:opacity-50"
+                      >
+                        -
+                      </button>
+                      <div className="flex h-11 items-center justify-center rounded-2xl bg-white text-base font-bold text-slate-900 ring-1 ring-slate-200">
+                        {session.guest_count}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => updateGuestCount(session.guest_count + 1)}
+                        disabled={isLocked || isSavingGuestCount}
+                        className="h-11 rounded-2xl bg-slate-200 text-lg font-bold text-slate-800 disabled:opacity-50"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      {isSavingGuestCount ? "儲存中..." : "可直接調整這張訂單的來客數"}
+                    </p>
                   </div>
 
                   <div className="rounded-2xl border border-gray-200 p-4">

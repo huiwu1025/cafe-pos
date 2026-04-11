@@ -5,6 +5,7 @@ create table if not exists public.manual_session_details (
   business_date date not null,
   session_number text not null,
   created_at timestamptz,
+  paid_at timestamptz,
   guest_count integer not null default 0,
   order_status text not null default 'closed',
   payment_status text not null default 'paid',
@@ -14,6 +15,7 @@ create table if not exists public.manual_session_details (
   total_amount numeric(12,2) not null default 0,
   customer_type text,
   customer_label text,
+  stay_minutes integer,
   updated_at timestamptz not null default now(),
   unique (business_date, session_number)
 );

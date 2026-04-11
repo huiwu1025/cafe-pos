@@ -23,6 +23,7 @@ type SessionRow = {
   customer_type?: string | null;
   customer_label?: string | null;
   created_at?: string | null;
+  paid_at?: string | null;
 };
 
 type OrderItemRow = {
@@ -75,6 +76,7 @@ type ManualSessionDetailRow = {
   business_date: string;
   session_number: string;
   created_at?: string | null;
+  paid_at?: string | null;
   guest_count: number | null;
   order_status: string | null;
   payment_status: string | null;
@@ -84,6 +86,7 @@ type ManualSessionDetailRow = {
   total_amount: number | null;
   customer_type?: string | null;
   customer_label?: string | null;
+  stay_minutes?: number | null;
 };
 
 type ProductCostItem = {
@@ -251,6 +254,28 @@ function columnToLetter(columnNumber: number) {
     current = Math.floor((current - 1) / 26);
   }
   return result;
+}
+
+function calculateStayMinutes(
+  createdAt: string | null | undefined,
+  paidAt: string | null | undefined,
+  paymentStatus?: string | null,
+  manualStayMinutes?: number | null
+) {
+  if (manualStayMinutes != null && Number.isFinite(Number(manualStayMinutes))) {
+    return Math.max(0, Math.round(Number(manualStayMinutes)));
+  }
+
+  if (!createdAt) return "";
+  const start = new Date(createdAt);
+  if (Number.isNaN(start.getTime())) return "";
+
+  const endValue = paidAt || (paymentStatus === "paid" ? createdAt : null);
+  if (!endValue) return "";
+  const end = new Date(endValue);
+  if (Number.isNaN(end.getTime())) return "";
+
+  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
 }
 
 function isTruthyPaid(value: string) {
@@ -1350,6 +1375,8 @@ export async function syncTodayDashboardToGoogleSheets() {
       "營業日期",
       "主單編號",
       "建立時間",
+      "結帳時間",
+      "停留分鐘",
       "來客數",
       "訂單狀態",
       "付款狀態",
@@ -1365,6 +1392,8 @@ export async function syncTodayDashboardToGoogleSheets() {
       formatBusinessDate(session.created_at ?? ""),
       session.session_number,
       session.created_at ?? "",
+      session.paid_at ?? "",
+      calculateStayMinutes(session.created_at, session.paid_at, session.payment_status),
       Number(session.guest_count ?? 0),
       session.order_status,
       session.payment_status,
@@ -1380,6 +1409,13 @@ export async function syncTodayDashboardToGoogleSheets() {
       session.business_date,
       session.session_number,
       session.created_at ?? "",
+      session.paid_at ?? "",
+      calculateStayMinutes(
+        session.created_at,
+        session.paid_at,
+        session.payment_status,
+        session.stay_minutes ?? null
+      ),
       Number(session.guest_count ?? 0),
       session.order_status ?? "closed",
       session.payment_status ?? "paid",
@@ -1389,6 +1425,57 @@ export async function syncTodayDashboardToGoogleSheets() {
       Number(session.total_amount ?? 0),
       session.customer_type ?? "",
       session.customer_label ?? "",
+    ]),
+  ]);
+
+  const stayAnalysisMap = new Map<
+    string,
+    { count: number; totalMinutes: number; maxMinutes: number; minMinutes: number }
+  >();
+  const appendStayMetric = (customerType: string | null | undefined, stayMinutes: number | string) => {
+    const numericStay = Number(stayMinutes);
+    if (!Number.isFinite(numericStay) || numericStay <= 0) return;
+    const key = customerType?.trim() || "未分類";
+    const existing = stayAnalysisMap.get(key) ?? {
+      count: 0,
+      totalMinutes: 0,
+      maxMinutes: 0,
+      minMinutes: Number.POSITIVE_INFINITY,
+    };
+    existing.count += 1;
+    existing.totalMinutes += numericStay;
+    existing.maxMinutes = Math.max(existing.maxMinutes, numericStay);
+    existing.minMinutes = Math.min(existing.minMinutes, numericStay);
+    stayAnalysisMap.set(key, existing);
+  };
+
+  for (const session of sortedSessions) {
+    appendStayMetric(
+      session.customer_type,
+      calculateStayMinutes(session.created_at, session.paid_at, session.payment_status)
+    );
+  }
+  for (const session of sortedManualSessions) {
+    appendStayMetric(
+      session.customer_type,
+      calculateStayMinutes(
+        session.created_at,
+        session.paid_at,
+        session.payment_status,
+        session.stay_minutes ?? null
+      )
+    );
+  }
+
+  await replaceSheetValues("客群停留分析", [
+    ["客人類型", "訂單數", "平均停留分鐘", "最長停留分鐘", "最短停留分鐘", "平均停留小時"],
+    ...Array.from(stayAnalysisMap.entries()).map(([customerType, item]) => [
+      customerType,
+      item.count,
+      item.count > 0 ? Math.round(item.totalMinutes / item.count) : 0,
+      item.maxMinutes,
+      item.minMinutes === Number.POSITIVE_INFINITY ? 0 : item.minMinutes,
+      item.count > 0 ? Number((item.totalMinutes / item.count / 60).toFixed(2)) : 0,
     ]),
   ]);
 
@@ -1735,7 +1822,7 @@ export async function syncTodayDashboardToGoogleSheets() {
   await applySheetStyles([
     { title: "每日摘要", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [1, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17], percentColumns: [13], autoResizeColumnCount: 19 },
     { title: "現金清點", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [1, 4, 7, 8, 9], autoResizeColumnCount: 11 },
-    { title: "訂單明細", frozenRows: 1, headerRowIndex: 0, dateColumns: [1], currencyColumns: [8, 9, 10], autoResizeColumnCount: 13 },
+    { title: "訂單明細", frozenRows: 1, headerRowIndex: 0, dateColumns: [1], currencyColumns: [10, 11, 12], autoResizeColumnCount: 15 },
     { title: "品項成本表", frozenRows: 1, headerRowIndex: 0, currencyColumns: [2, 3, 4], percentColumns: [5], autoResizeColumnCount: 8 },
     { title: "固定支出", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [4], autoResizeColumnCount: 7 },
     { title: "進貨耗材", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [4, 6], autoResizeColumnCount: 9 },
@@ -1745,6 +1832,7 @@ export async function syncTodayDashboardToGoogleSheets() {
     { title: "品項毛利", frozenRows: 1, headerRowIndex: 0, currencyColumns: [3, 4, 5, 6], percentColumns: [7], autoResizeColumnCount: 9 },
     { title: "付款方式淨收入", frozenRows: 1, headerRowIndex: 0, currencyColumns: [2, 3, 4], autoResizeColumnCount: 5 },
     { title: "每日毛利", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [1, 2, 3, 5, 6], percentColumns: [4], autoResizeColumnCount: 8 },
+    { title: "客群停留分析", frozenRows: 1, headerRowIndex: 0, autoResizeColumnCount: 6 },
   ]);
 
   return {

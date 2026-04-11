@@ -10,6 +10,7 @@ type SessionInfo = {
   guestCount: number;
   paymentStatus: string;
   seatCodes: string[];
+  customerLabel?: string | null;
 };
 
 type ReservationInfo = {
@@ -79,6 +80,18 @@ function formatSeatLabel(seatCodes: string[]) {
   const isAllBar = seatCodes.every((seat) => seat.startsWith("A"));
   if (isAllBar) return seatCodes.join("、");
   return seatCodes.map((seat) => `${seat}桌`).join("、");
+}
+
+function appendTransferNote(existingLabel: string | null | undefined, fromSeats: string[], toSeats: string[]) {
+  const base = (existingLabel ?? "").trim();
+  const timestamp = new Date().toLocaleTimeString("zh-TW", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const transferNote = `轉桌 ${formatSeatLabel(fromSeats)} → ${formatSeatLabel(toSeats)} ${timestamp}`;
+  if (!base) return transferNote;
+  return `${base} / ${transferNote}`;
 }
 
 function buildReservationLabel(name: string, phone: string) {
@@ -179,11 +192,14 @@ export default function Home() {
   const [isCreatingReservation, setIsCreatingReservation] = useState(false);
   const [isConvertingReservation, setIsConvertingReservation] = useState(false);
   const [showReservationModal, setShowReservationModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
   const [reservationName, setReservationName] = useState("");
   const [reservationPhone, setReservationPhone] = useState("");
   const [reservationDate, setReservationDate] = useState(todayIsoDate());
   const [reservationTime, setReservationTime] = useState("13:00");
   const [reservationNotes, setReservationNotes] = useState("");
+  const [transferSeatCodes, setTransferSeatCodes] = useState<string[]>([]);
+  const [isTransferringSeats, setIsTransferringSeats] = useState(false);
 
   const isBarSelection = useMemo(() => selectedSeats.length > 0 && selectedSeats.every((seat) => seat.startsWith("A")), [selectedSeats]);
   const guestLimit = useMemo(() => {
@@ -195,6 +211,22 @@ export default function Home() {
   }, [isBarSelection, selectedSeats]);
   const selectedLabel = useMemo(() => formatSeatLabel(selectedSeats), [selectedSeats]);
   const seatType = useMemo(() => (selectedSeats.length === 0 ? "未選擇" : isBarSelection ? "吧檯座位" : "桌位"), [isBarSelection, selectedSeats]);
+  const allSeatCodes = useMemo(() => [...TABLES, ...BAR_SEATS], []);
+  const transferSeatLimit = useMemo(() => {
+    if (!viewingSession) return 1;
+    return viewingSession.seatCodes.every((seat) => seat.startsWith("A"))
+      ? viewingSession.seatCodes.length
+      : 1;
+  }, [viewingSession]);
+  const availableTransferSeats = useMemo(() => {
+    if (!viewingSession) return [] as string[];
+    return allSeatCodes.filter(
+      (seatCode) =>
+        !viewingSession.seatCodes.includes(seatCode) &&
+        !occupiedSeats[seatCode] &&
+        !reservedSeats[seatCode]
+    );
+  }, [allSeatCodes, occupiedSeats, reservedSeats, viewingSession]);
   const statItems = [
     { label: "今日營業額", value: `$${summary.revenue}`, tone: "text-emerald-700" },
     { label: "今日來客數", value: `${summary.guests} 人`, tone: "text-sky-700" },
@@ -233,6 +265,7 @@ export default function Home() {
           id,
           session_number,
           guest_count,
+          customer_label,
           order_status,
           payment_status
         )
@@ -246,7 +279,7 @@ export default function Home() {
         if (!session?.id || !seat?.seat_code || session.order_status !== "open" || session.payment_status !== "unpaid") continue;
         const existing = sessionMap.get(session.id);
         if (existing) existing.seatCodes.push(seat.seat_code);
-        else sessionMap.set(session.id, { sessionId: session.id, sessionNumber: session.session_number, guestCount: Number(session.guest_count ?? 0), paymentStatus: session.payment_status, seatCodes: [seat.seat_code] });
+        else sessionMap.set(session.id, { sessionId: session.id, sessionNumber: session.session_number, guestCount: Number(session.guest_count ?? 0), paymentStatus: session.payment_status, seatCodes: [seat.seat_code], customerLabel: session.customer_label ?? "" });
       }
       for (const sessionInfo of sessionMap.values()) {
         sessionInfo.seatCodes.sort(sortSeatCodes);
@@ -323,6 +356,8 @@ export default function Home() {
     setGuestCount(1);
     setViewingSession(null);
     setViewingReservation(null);
+    setTransferSeatCodes([]);
+    setShowTransferModal(false);
   }
 
   function resetReservationForm() {
@@ -392,6 +427,21 @@ export default function Home() {
     if (error) throw error;
     if (!data || data.length === 0) throw new Error("找不到座位資料");
     return data;
+  }
+
+  function toggleTransferSeat(seatCode: string) {
+    if (!viewingSession) return;
+
+    if (transferSeatLimit === 1) {
+      setTransferSeatCodes([seatCode]);
+      return;
+    }
+
+    setTransferSeatCodes((prev) => {
+      if (prev.includes(seatCode)) return prev.filter((item) => item !== seatCode);
+      if (prev.length >= transferSeatLimit) return prev;
+      return [...prev, seatCode].sort(sortSeatCodes);
+    });
   }
 
   function generateSessionNumber() {
@@ -552,6 +602,70 @@ export default function Home() {
     }
   }
 
+  async function handleTransferViewedSession() {
+    if (!viewingSession) return;
+    if (transferSeatCodes.length === 0) {
+      alert("請先選擇要轉去的座位");
+      return;
+    }
+    if (transferSeatLimit > 1 && transferSeatCodes.length !== transferSeatLimit) {
+      alert(`請選擇 ${transferSeatLimit} 個新座位`);
+      return;
+    }
+
+    try {
+      setIsTransferringSeats(true);
+
+      await Promise.all([loadOccupiedSeats(), loadReservedSeats()]);
+      if (transferSeatCodes.some((seatCode) => occupiedSeats[seatCode] || reservedSeats[seatCode])) {
+        alert("目標座位已被使用或預約保留，請重新選擇");
+        return;
+      }
+
+      const seatRows = await fetchSeatRows(transferSeatCodes);
+
+      const { error: deleteError } = await supabase
+        .from("session_seats")
+        .delete()
+        .eq("session_id", viewingSession.sessionId);
+      if (deleteError) throw deleteError;
+
+      const { error: insertError } = await supabase
+        .from("session_seats")
+        .insert(seatRows.map((seat) => ({ session_id: viewingSession.sessionId, seat_id: seat.id })));
+      if (insertError) throw insertError;
+
+      const nextCustomerLabel = appendTransferNote(
+        viewingSession.customerLabel,
+        viewingSession.seatCodes,
+        transferSeatCodes
+      );
+      const { error: updateSessionError } = await supabase
+        .from("dining_sessions")
+        .update({
+          customer_label: nextCustomerLabel,
+        })
+        .eq("id", viewingSession.sessionId);
+      if (updateSessionError) throw updateSessionError;
+
+      const nextViewingSession = {
+        ...viewingSession,
+        seatCodes: [...transferSeatCodes].sort(sortSeatCodes),
+        customerLabel: nextCustomerLabel,
+      };
+      setViewingSession(nextViewingSession);
+      setShowTransferModal(false);
+      setTransferSeatCodes([]);
+      await Promise.all([loadOccupiedSeats(), loadReservedSeats()]);
+      alert(`已轉桌到 ${formatSeatLabel(nextViewingSession.seatCodes)}`);
+    } catch (error) {
+      console.error("轉桌失敗", error);
+      alert(getErrorMessage(error, "轉桌失敗"));
+    } finally {
+      setIsTransferringSeats(false);
+    }
+  }
+
   async function updateReservationStatus(reservation: ReservationInfo, status: "cancelled" | "no_show") {
     const confirmed = window.confirm(status === "cancelled" ? "確定取消這筆預約？" : "確定將這筆預約標記為逾時？");
     if (!confirmed) return;
@@ -697,6 +811,16 @@ export default function Home() {
                         <AsideCard label="來客數" value={`${viewingSession.guestCount} 人`} />
                         <AsideCard label="付款狀態" value={viewingSession.paymentStatus} />
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTransferSeatCodes([]);
+                          setShowTransferModal(true);
+                        }}
+                        className="h-11 w-full rounded-[20px] bg-sky-100 text-sm font-semibold text-sky-800 hover:bg-sky-200"
+                      >
+                        轉桌
+                      </button>
                       <button type="button" onClick={() => router.push(`/session/${viewingSession.sessionId}`)} className="mt-auto h-14 w-full rounded-[22px] bg-sky-500 text-lg font-bold text-white hover:bg-sky-600">進入訂單</button>
                     </div>
                   </>
@@ -794,6 +918,85 @@ export default function Home() {
             <div className="mt-5 grid grid-cols-2 gap-3">
               <button type="button" onClick={() => setShowReservationModal(false)} className="h-12 rounded-2xl bg-slate-100 text-sm font-semibold text-slate-700">取消</button>
               <button type="button" onClick={handleCreateReservation} disabled={isCreatingReservation} className="h-12 rounded-2xl bg-fuchsia-500 text-sm font-semibold text-white disabled:opacity-50">{isCreatingReservation ? "建立中..." : "確認鎖位"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTransferModal && viewingSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-3xl rounded-[28px] bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm text-sky-700">首頁轉桌</p>
+                <h3 className="mt-1 text-2xl font-bold text-slate-900">選擇新的座位</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  目前：{formatSeatLabel(viewingSession.seatCodes)}
+                  {transferSeatLimit > 1 ? `，請選 ${transferSeatLimit} 個新座位` : "，請選 1 個新座位"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTransferModal(false);
+                  setTransferSeatCodes([]);
+                }}
+                className="h-10 rounded-2xl bg-slate-100 px-3 text-sm font-semibold text-slate-700"
+              >
+                關閉
+              </button>
+            </div>
+
+            <div className="mt-4 grid max-h-[420px] grid-cols-3 gap-3 overflow-y-auto pr-1 lg:grid-cols-4">
+              {availableTransferSeats.length === 0 ? (
+                <div className="col-span-full rounded-2xl bg-slate-50 p-5 text-sm text-slate-500">
+                  目前沒有可轉換的空桌
+                </div>
+              ) : (
+                availableTransferSeats.map((seatCode) => {
+                  const isSelected = transferSeatCodes.includes(seatCode);
+                  return (
+                    <button
+                      key={seatCode}
+                      type="button"
+                      onClick={() => toggleTransferSeat(seatCode)}
+                      className={`rounded-[24px] border px-4 py-5 text-left transition ${
+                        isSelected
+                          ? "border-sky-400 bg-sky-100 text-sky-900"
+                          : "border-slate-200 bg-white text-slate-900 hover:border-sky-300 hover:bg-sky-50"
+                      }`}
+                    >
+                      <p className="text-2xl font-bold">{seatCode.startsWith("A") ? seatCode : `${seatCode}桌`}</p>
+                      <p className="mt-1 text-sm text-slate-500">{seatCode.startsWith("A") ? "吧檯座位" : "桌位"}</p>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              新座位：<span className="font-semibold text-slate-900">{formatSeatLabel(transferSeatCodes)}</span>
+            </div>
+
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTransferModal(false);
+                  setTransferSeatCodes([]);
+                }}
+                className="h-12 flex-1 rounded-2xl bg-slate-100 text-base font-semibold text-slate-700"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleTransferViewedSession}
+                disabled={transferSeatCodes.length === 0 || isTransferringSeats}
+                className="h-12 flex-1 rounded-2xl bg-sky-500 text-base font-semibold text-white disabled:opacity-60"
+              >
+                {isTransferringSeats ? "轉桌中..." : "確認轉桌"}
+              </button>
             </div>
           </div>
         </div>
