@@ -296,7 +296,7 @@ function buildSalesDetailRows(
 
       return {
         businessDate: formatBusinessDate(session.created_at ?? ""),
-        month: formatBusinessDate(session.created_at ?? "").slice(0, 7),
+        month: `'${formatBusinessDate(session.created_at ?? "").slice(0, 7)}`,
         productName: item.product_name,
         category: product?.category ?? "",
         quantity,
@@ -322,7 +322,7 @@ function buildSalesDetailRows(
 
     return {
       businessDate: item.business_date,
-      month: item.business_date.slice(0, 7),
+      month: `'${item.business_date.slice(0, 7)}`,
       productName: item.product_name,
       category: product?.category ?? "",
       quantity,
@@ -514,8 +514,13 @@ async function loadManualSessionDetails(supabase: ReturnType<typeof getSupabaseS
   return (data ?? []) as ManualSessionDetailRow[];
 }
 
-async function loadProductCosts(sourceSpreadsheetId: string) {
-  const rows = await readSheetValues(SOURCE_PRODUCT_COST_SHEET, sourceSpreadsheetId);
+async function loadProductCosts(sourceSpreadsheetId?: string) {
+  const rowsFromReport = await readSheetValues(SOURCE_PRODUCT_COST_SHEET);
+  const rowsFromSource =
+    rowsFromReport.length === 0 && sourceSpreadsheetId
+      ? await readSheetValues(SOURCE_PRODUCT_COST_SHEET, sourceSpreadsheetId)
+      : [];
+  const rows = rowsFromReport.length > 0 ? rowsFromReport : rowsFromSource;
   const headerIndex = findHeaderRowIndex(rows, ["品項名稱", "類別", "售價", "單位成本"]);
   const items: ProductCostItem[] = [];
 
@@ -1870,20 +1875,6 @@ export async function syncTodayDashboardToGoogleSheets() {
   ]);
 
   await syncSourceTemplateSheets(dailyMetrics, allItemSummary, monthlyMetrics, productCosts, fixedExpenses, procurements);
-
-  await replaceSheetValues("品項成本表", [
-    ["品項名稱", "類別", "售價", "單位成本", "單杯/份毛利", "單杯/份毛利率", "是否主打", "備註"],
-    ...productCosts.map((item) => [
-      item.name,
-      item.category,
-      item.price,
-      item.unitCost,
-      item.grossProfit,
-      item.grossMargin,
-      item.featured,
-      item.notes,
-    ]),
-  ]);
 
   await replaceSheetValues("固定支出", [
     ["日期", "月份", "支出項目", "類型", "金額", "是否已付款", "備註"],
