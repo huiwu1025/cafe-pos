@@ -199,6 +199,7 @@ type SheetStyleConfig = {
   headerRowHeight?: number;
   bodyRowHeight?: number;
   columnWidths?: Array<number | null | undefined>;
+  customRowHeights?: Array<{ rowIndex: number; pixelSize: number }>;
   leftAlignColumns?: number[];
   centerAlignColumns?: number[];
   rightAlignColumns?: number[];
@@ -1199,6 +1200,23 @@ async function applySheetStyles(configs: SheetStyleConfig[]) {
           },
           properties: {
             pixelSize: config.bodyRowHeight,
+          },
+          fields: "pixelSize",
+        },
+      });
+    }
+
+    for (const rowHeight of config.customRowHeights ?? []) {
+      requests.push({
+        updateDimensionProperties: {
+          range: {
+            sheetId,
+            dimension: "ROWS",
+            startIndex: rowHeight.rowIndex,
+            endIndex: rowHeight.rowIndex + 1,
+          },
+          properties: {
+            pixelSize: rowHeight.pixelSize,
           },
           fields: "pixelSize",
         },
