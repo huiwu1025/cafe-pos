@@ -44,10 +44,11 @@ type OrderItem = {
   is_complimentary?: boolean | null;
 };
 
-const CUSTOMER_TYPES = ["客人", "朋友", "熟客", "粉絲"];
+const CUSTOMER_TYPES = ["客人", "朋友", "熟客", "員工", "粉絲"];
 const TEMP_OPTIONS = ["冰", "涼", "熱"];
 const SUGAR_OPTIONS = ["兩倍糖", "正常", "少糖", "無糖"];
 const PAYMENT_METHOD_OPTIONS = ["現金", "歐付寶", "其他"];
+const EMPLOYEE_DISCOUNT_RATE = 0.2;
 
 export default function SessionPage() {
   const params = useParams();
@@ -161,6 +162,11 @@ export default function SessionPage() {
     return Number.isFinite(num) ? num : 0;
   }
 
+  function calculateOrderDiscount(subtotal: number, customerType?: string | null) {
+    if (customerType !== "員工") return 0;
+    return Math.round(Math.max(subtotal, 0) * EMPLOYEE_DISCOUNT_RATE);
+  }
+
   const itemsSubtotal = useMemo(() => {
     return orderItems.reduce((sum, item) => {
       if (item.is_complimentary) return sum;
@@ -199,7 +205,7 @@ export default function SessionPage() {
       return sum + Number(item.line_total ?? 0);
     }, 0);
 
-    const discount = Number(session?.discount_amount ?? 0);
+    const discount = calculateOrderDiscount(subtotal, session?.customer_type);
     const tip = nextTipAmount ?? Number(session?.tip_amount ?? 0);
     const total = Math.max(subtotal - discount, 0) + Math.max(Number(tip ?? 0), 0);
 
@@ -207,6 +213,7 @@ export default function SessionPage() {
       .from("dining_sessions")
       .update({
         subtotal_amount: subtotal,
+        discount_amount: discount,
         total_amount: total,
         tip_amount: Math.max(Number(tip ?? 0), 0),
       })
@@ -450,10 +457,16 @@ export default function SessionPage() {
     if (!session) return;
 
     try {
+      const nextDiscount = calculateOrderDiscount(itemsSubtotal, nextType);
+      const nextTip = Number(session.tip_amount ?? 0);
+      const nextTotal = Math.max(itemsSubtotal - nextDiscount, 0) + Math.max(nextTip, 0);
+
       const { error } = await supabase
         .from("dining_sessions")
         .update({
           customer_type: nextType,
+          discount_amount: nextDiscount,
+          total_amount: nextTotal,
         })
         .eq("id", sessionId);
 
@@ -464,6 +477,8 @@ export default function SessionPage() {
           ? {
               ...prev,
               customer_type: nextType,
+              discount_amount: nextDiscount,
+              total_amount: nextTotal,
             }
           : prev
       );
