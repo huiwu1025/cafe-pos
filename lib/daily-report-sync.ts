@@ -543,7 +543,12 @@ async function loadProductCosts(sourceSpreadsheetId?: string) {
     }
   }
 
-  return items;
+  return {
+    items,
+    source: rowsFromReport.length > 0 ? "report" : rowsFromSource.length > 0 ? "source" : "none",
+    reportRowCount: rowsFromReport.length,
+    sourceRowCount: rowsFromSource.length,
+  };
 }
 
 async function loadFixedExpenses(sourceSpreadsheetId: string) {
@@ -1407,7 +1412,8 @@ export async function syncTodayDashboardToGoogleSheets() {
   const manualSessionDetails = await loadManualSessionDetails(supabase);
 
   const availableSheets = sourceSpreadsheetId ? await listSheetTitles(sourceSpreadsheetId) : [];
-  const productCosts = sourceSpreadsheetId ? await loadProductCosts(sourceSpreadsheetId) : [];
+  const productCostLoadResult = await loadProductCosts(sourceSpreadsheetId || undefined);
+  const productCosts = productCostLoadResult.items;
   const fixedExpenses = sourceSpreadsheetId ? await loadFixedExpenses(sourceSpreadsheetId) : [];
   const procurements = sourceSpreadsheetId ? await loadProcurements(sourceSpreadsheetId) : [];
 
@@ -2285,6 +2291,9 @@ export async function syncTodayDashboardToGoogleSheets() {
     totalPaymentFees,
     netRevenue,
     costItems: productCosts.length,
+    costSource: productCostLoadResult.source,
+    reportCostRows: productCostLoadResult.reportRowCount,
+    sourceCostRows: productCostLoadResult.sourceRowCount,
     cumulativeProfit,
   };
 }
