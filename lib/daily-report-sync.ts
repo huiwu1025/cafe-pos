@@ -181,6 +181,8 @@ type SheetStyleConfig = {
   percentColumns?: number[];
   dateColumns?: number[];
   autoResizeColumnCount?: number;
+  headerRowHeight?: number;
+  bodyRowHeight?: number;
 };
 
 const TAIPEI_TIMEZONE = "Asia/Taipei";
@@ -1030,6 +1032,23 @@ async function applySheetStyles(configs: SheetStyleConfig[]) {
     }
 
     if (config.headerRowIndex != null) {
+      if (config.headerRowHeight != null) {
+        requests.push({
+          updateDimensionProperties: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: config.headerRowIndex,
+              endIndex: config.headerRowIndex + 1,
+            },
+            properties: {
+              pixelSize: config.headerRowHeight,
+            },
+            fields: "pixelSize",
+          },
+        });
+      }
+
       requests.push({
         repeatCell: {
           range: {
@@ -1053,6 +1072,23 @@ async function applySheetStyles(configs: SheetStyleConfig[]) {
           },
           fields:
             "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
+        },
+      });
+    }
+
+    if (config.bodyRowHeight != null) {
+      requests.push({
+        updateDimensionProperties: {
+          range: {
+            sheetId,
+            dimension: "ROWS",
+            startIndex: (config.headerRowIndex ?? 0) + 1,
+            endIndex: 200,
+          },
+          properties: {
+            pixelSize: config.bodyRowHeight,
+          },
+          fields: "pixelSize",
         },
       });
     }
@@ -1820,19 +1856,19 @@ export async function syncTodayDashboardToGoogleSheets() {
   ]);
 
   await applySheetStyles([
-    { title: "每日摘要", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [1, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17], percentColumns: [13], autoResizeColumnCount: 19 },
-    { title: "現金清點", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [1, 4, 7, 8, 9], autoResizeColumnCount: 11 },
-    { title: "訂單明細", frozenRows: 1, headerRowIndex: 0, dateColumns: [1], currencyColumns: [10, 11, 12], autoResizeColumnCount: 15 },
-    { title: "品項成本表", frozenRows: 1, headerRowIndex: 0, currencyColumns: [2, 3, 4], percentColumns: [5], autoResizeColumnCount: 8 },
-    { title: "固定支出", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [4], autoResizeColumnCount: 7 },
-    { title: "進貨耗材", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [4, 6], autoResizeColumnCount: 9 },
-    { title: "每日總覽", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], autoResizeColumnCount: 18 },
-    { title: "品項分析", frozenRows: 5, headerRowIndex: 4, currencyColumns: [2, 3, 5, 6, 7], percentColumns: [8], autoResizeColumnCount: 12 },
-    { title: "月總表", frozenRows: 8, headerRowIndex: 7, currencyColumns: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], autoResizeColumnCount: 15 },
-    { title: "品項毛利", frozenRows: 1, headerRowIndex: 0, currencyColumns: [3, 4, 5, 6], percentColumns: [7], autoResizeColumnCount: 9 },
-    { title: "付款方式淨收入", frozenRows: 1, headerRowIndex: 0, currencyColumns: [2, 3, 4], autoResizeColumnCount: 5 },
-    { title: "每日毛利", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [1, 2, 3, 5, 6], percentColumns: [4], autoResizeColumnCount: 8 },
-    { title: "客群停留分析", frozenRows: 1, headerRowIndex: 0, autoResizeColumnCount: 6 },
+    { title: "每日摘要", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [1, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17], percentColumns: [13], autoResizeColumnCount: 19, headerRowHeight: 42, bodyRowHeight: 34 },
+    { title: "現金清點", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [1, 4, 7, 8, 9], autoResizeColumnCount: 11, headerRowHeight: 42, bodyRowHeight: 34 },
+    { title: "訂單明細", frozenRows: 1, headerRowIndex: 0, dateColumns: [1], currencyColumns: [10, 11, 12], autoResizeColumnCount: 15, headerRowHeight: 42, bodyRowHeight: 34 },
+    { title: "品項成本表", frozenRows: 1, headerRowIndex: 0, currencyColumns: [2, 3, 4], percentColumns: [5], autoResizeColumnCount: 8, headerRowHeight: 42, bodyRowHeight: 34 },
+    { title: "固定支出", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [4], autoResizeColumnCount: 7, headerRowHeight: 42, bodyRowHeight: 34 },
+    { title: "進貨耗材", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [4, 6], autoResizeColumnCount: 9, headerRowHeight: 42, bodyRowHeight: 34 },
+    { title: "每日總覽", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], autoResizeColumnCount: 18, headerRowHeight: 44, bodyRowHeight: 36 },
+    { title: "品項分析", frozenRows: 5, headerRowIndex: 4, currencyColumns: [2, 3, 5, 6, 7], percentColumns: [8], autoResizeColumnCount: 12, headerRowHeight: 44, bodyRowHeight: 36 },
+    { title: "月總表", frozenRows: 8, headerRowIndex: 7, currencyColumns: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], autoResizeColumnCount: 15, headerRowHeight: 44, bodyRowHeight: 36 },
+    { title: "品項毛利", frozenRows: 1, headerRowIndex: 0, currencyColumns: [3, 4, 5, 6], percentColumns: [7], autoResizeColumnCount: 9, headerRowHeight: 42, bodyRowHeight: 34 },
+    { title: "付款方式淨收入", frozenRows: 1, headerRowIndex: 0, currencyColumns: [2, 3, 4], autoResizeColumnCount: 5, headerRowHeight: 42, bodyRowHeight: 34 },
+    { title: "每日毛利", frozenRows: 1, headerRowIndex: 0, dateColumns: [0], currencyColumns: [1, 2, 3, 5, 6], percentColumns: [4], autoResizeColumnCount: 8, headerRowHeight: 42, bodyRowHeight: 34 },
+    { title: "客群停留分析", frozenRows: 1, headerRowIndex: 0, autoResizeColumnCount: 6, headerRowHeight: 42, bodyRowHeight: 34 },
   ]);
 
   return {

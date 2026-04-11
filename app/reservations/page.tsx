@@ -14,6 +14,7 @@ type ReservationInfo = {
   guestCount: number;
   notes: string;
   seatCodes: string[];
+  status?: string;
 };
 
 type ReservationSeatRow = {
@@ -133,6 +134,9 @@ export default function ReservationsPage() {
   const [reservations, setReservations] = useState<ReservationInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"today" | "all" | "date">("today");
+  const [selectedDate, setSelectedDate] = useState(todayIsoDate());
+  const [statusFilter, setStatusFilter] = useState<"all" | "reserved" | "cancelled" | "no_show" | "arrived" | "completed">("all");
 
   const loadReservations = useCallback(async () => {
     try {
@@ -159,19 +163,13 @@ export default function ReservationsPage() {
 
       if (error) throw error;
 
-      const today = todayIsoDate();
       const reservationMap = new Map<string, ReservationInfo>();
 
       for (const row of (data ?? []) as ReservationSeatRow[]) {
         const reservation = Array.isArray(row.reservations) ? row.reservations[0] : row.reservations;
         const seat = Array.isArray(row.seats) ? row.seats[0] : row.seats;
 
-        if (
-          !reservation?.id ||
-          !seat?.seat_code ||
-          reservation.status !== "reserved" ||
-          reservation.reservation_date !== today
-        ) {
+        if (!reservation?.id || !seat?.seat_code) {
           continue;
         }
 
@@ -191,6 +189,7 @@ export default function ReservationsPage() {
           guestCount: Number(reservation.guest_count ?? 0),
           notes: reservation.notes ?? "",
           seatCodes: [seat.seat_code],
+          status: reservation.status,
         });
       }
 
@@ -214,12 +213,35 @@ export default function ReservationsPage() {
     loadReservations();
   }, [loadReservations]);
 
+  const filteredReservations = useMemo(() => {
+    return reservations
+      .filter((reservation) => {
+        const dateMatch =
+          viewMode === "all"
+            ? true
+            : viewMode === "today"
+              ? reservation.reservationDate === todayIsoDate()
+              : reservation.reservationDate === selectedDate;
+
+        const reservationStatus = reservation.status ?? "reserved";
+        const statusMatch = statusFilter === "all" ? true : reservationStatus === statusFilter;
+        return dateMatch && statusMatch;
+      })
+      .sort((a, b) => {
+        const dateCompare = a.reservationDate.localeCompare(b.reservationDate);
+        if (dateCompare !== 0) return dateCompare;
+        return a.reservationTime.localeCompare(b.reservationTime);
+      });
+  }, [reservations, selectedDate, statusFilter, viewMode]);
+
   const stats = useMemo(
     () => ({
-      count: reservations.length,
-      guests: reservations.reduce((sum, item) => sum + item.guestCount, 0),
+      total: filteredReservations.length,
+      guests: filteredReservations.reduce((sum, item) => sum + item.guestCount, 0),
+      reservedSeats: filteredReservations.reduce((sum, item) => sum + item.seatCodes.length, 0),
+      reservedTables: filteredReservations.filter((item) => item.seatCodes.some((seat) => !seat.startsWith("A"))).length,
     }),
-    [reservations]
+    [filteredReservations]
   );
 
   async function updateReservationStatus(
@@ -273,7 +295,7 @@ export default function ReservationsPage() {
               <p className="text-xs font-semibold uppercase tracking-[0.28em] text-fuchsia-700">
                 Reservation Board
               </p>
-              <h1 className="mt-1 text-2xl font-bold text-slate-900 lg:text-3xl">今日預約</h1>
+              <h1 className="mt-1 text-2xl font-bold text-slate-900 lg:text-3xl">預約總覽</h1>
             </div>
             <div className="grid grid-cols-3 gap-2 lg:flex">
               <button
@@ -300,26 +322,85 @@ export default function ReservationsPage() {
             </div>
           </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-2 lg:max-w-[360px]">
+          <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
             <div className="rounded-[20px] bg-slate-50 px-3 py-3">
-              <p className="text-[11px] text-slate-500">今日預約筆數</p>
-              <p className="mt-1 text-2xl font-bold text-fuchsia-700">{stats.count} 筆</p>
+              <p className="text-[11px] text-slate-500">預約筆數</p>
+              <p className="mt-1 text-2xl font-bold text-fuchsia-700">{stats.total} 筆</p>
             </div>
             <div className="rounded-[20px] bg-slate-50 px-3 py-3">
-              <p className="text-[11px] text-slate-500">今日預約來客</p>
+              <p className="text-[11px] text-slate-500">預約來客</p>
               <p className="mt-1 text-2xl font-bold text-sky-700">{stats.guests} 人</p>
+            </div>
+            <div className="rounded-[20px] bg-slate-50 px-3 py-3">
+              <p className="text-[11px] text-slate-500">保留座位數</p>
+              <p className="mt-1 text-2xl font-bold text-amber-700">{stats.reservedSeats} 位</p>
+            </div>
+            <div className="rounded-[20px] bg-slate-50 px-3 py-3">
+              <p className="text-[11px] text-slate-500">保留桌數</p>
+              <p className="mt-1 text-2xl font-bold text-emerald-700">{stats.reservedTables} 桌</p>
             </div>
           </div>
         </header>
 
         <section className="pos-panel min-h-0 flex-1 rounded-[28px] p-3 lg:p-4">
+          <div className="mb-3 grid gap-2 lg:grid-cols-[1fr_180px_180px]">
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setViewMode("today")}
+                className={`h-11 rounded-2xl text-sm font-semibold ${
+                  viewMode === "today" ? "bg-fuchsia-500 text-white" : "bg-slate-100 text-slate-700"
+                }`}
+              >
+                今日
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("all")}
+                className={`h-11 rounded-2xl text-sm font-semibold ${
+                  viewMode === "all" ? "bg-fuchsia-500 text-white" : "bg-slate-100 text-slate-700"
+                }`}
+              >
+                全部
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("date")}
+                className={`h-11 rounded-2xl text-sm font-semibold ${
+                  viewMode === "date" ? "bg-fuchsia-500 text-white" : "bg-slate-100 text-slate-700"
+                }`}
+              >
+                指定日期
+              </button>
+            </div>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              disabled={viewMode !== "date"}
+              className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none disabled:bg-slate-100"
+            />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none"
+            >
+              <option value="all">全部狀態</option>
+              <option value="reserved">預約中</option>
+              <option value="arrived">已到店</option>
+              <option value="completed">已完成</option>
+              <option value="cancelled">已取消</option>
+              <option value="no_show">逾時未到</option>
+            </select>
+          </div>
+
           {isLoading ? (
             <div className="rounded-[22px] bg-slate-50 p-4 text-sm text-slate-500">讀取中...</div>
-          ) : reservations.length === 0 ? (
-            <div className="rounded-[22px] bg-slate-50 p-4 text-sm text-slate-500">今天沒有尚未處理的預約</div>
+          ) : filteredReservations.length === 0 ? (
+            <div className="rounded-[22px] bg-slate-50 p-4 text-sm text-slate-500">目前沒有符合條件的預約</div>
           ) : (
             <div className="pos-scroll grid min-h-0 gap-3 pr-1 lg:grid-cols-2">
-              {reservations.map((reservation) => {
+              {filteredReservations.map((reservation) => {
                 const isUpdating = updatingId === reservation.reservationId;
 
                 return (
@@ -329,14 +410,20 @@ export default function ReservationsPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
+                        <p className="text-xs text-slate-500">{reservation.reservationDate}</p>
                         <p className="text-lg font-bold text-slate-900">
                           {reservation.reservationTime} {reservation.reservationName}
                         </p>
                         <p className="mt-1 text-sm text-slate-500">{reservation.reservationPhone}</p>
                       </div>
-                      <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600">
-                        {reservation.reservationCode}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+                          {reservation.reservationCode}
+                        </span>
+                        <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
+                          {reservation.status ?? "reserved"}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="mt-4 grid grid-cols-3 gap-2">
