@@ -1922,7 +1922,7 @@ export async function syncTodayDashboardToGoogleSheets() {
       item.date,
       `=TEXT(A${row},"yyyy-mm")`,
       item.guestCount,
-      item.productRevenue,
+      `=E${row}+F${row}`,
       item.cashIncome,
       item.transferIncome,
       item.otherIncome,
@@ -1930,13 +1930,13 @@ export async function syncTodayDashboardToGoogleSheets() {
       item.discount,
       item.complimentary,
       item.refund,
-      `=E${row}+F${row}+G${row}+H${row}-I${row}-K${row}`,
-      item.productCost,
-      `=L${row}-M${row}`,
+      `=D${row}+G${row}+H${row}-I${row}-J${row}-K${row}`,
+      `=SUMIF(訂單明細!A:A,A${row},訂單明細!I:I)`,
+      `=D${row}-M${row}`,
       item.reconciliationDiff,
-      item.rent,
-      item.paymentFees,
-      `=L${row}-Q${row}`,
+      `=ROUND(N${row}*0.2,0)`,
+      `=IF(F${row}<=0,0,MAX(1,ROUND(F${row}*2.45%,0)))`,
+      `=L${row}-P${row}-Q${row}`,
     ];
   });
 
