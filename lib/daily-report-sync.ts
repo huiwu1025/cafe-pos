@@ -134,6 +134,21 @@ type ItemProfitSummary = {
   notes: string;
 };
 
+type SalesDetailRow = {
+  businessDate: string;
+  month: string;
+  productName: string;
+  category: string;
+  quantity: number;
+  unitPrice: number;
+  unitCost: number;
+  salesAmount: number;
+  productCost: number;
+  grossProfit: number;
+  customerType: string;
+  note: string;
+};
+
 type DailyMetric = {
   date: string;
   month: string;
@@ -253,6 +268,79 @@ function toPercentValue(value: string | number | null | undefined) {
 
 function normalizeProductName(name: string) {
   return name.trim();
+}
+
+function buildSalesDetailRows(
+  sessions: SessionRow[],
+  orderItems: OrderItemRow[],
+  manualProductSales: ManualDailyProductSaleRow[],
+  productCosts: ProductCostItem[]
+) {
+  const productCostMap = new Map(
+    productCosts.map((item) => [normalizeProductName(item.name), item])
+  );
+  const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+
+  const liveRows: SalesDetailRow[] = orderItems
+    .map((item) => {
+      const session = sessionMap.get(item.session_id);
+      if (!session) return null;
+
+      const product = productCostMap.get(normalizeProductName(item.product_name));
+      const quantity = Number(item.quantity ?? 0);
+      const salesAmount = Number(item.line_total ?? 0);
+      const unitPrice =
+        quantity > 0 ? Math.round((salesAmount / quantity) * 100) / 100 : Number(product?.price ?? 0);
+      const unitCost = Number(product?.unitCost ?? 0);
+      const productCost = quantity * unitCost;
+
+      return {
+        businessDate: formatBusinessDate(session.created_at ?? ""),
+        month: formatBusinessDate(session.created_at ?? "").slice(0, 7),
+        productName: item.product_name,
+        category: product?.category ?? "",
+        quantity,
+        unitPrice,
+        unitCost,
+        salesAmount,
+        productCost,
+        grossProfit: salesAmount - productCost,
+        customerType: session.customer_type ?? "",
+        note: session.customer_label ?? session.session_number,
+      } satisfies SalesDetailRow;
+    })
+    .filter((row): row is SalesDetailRow => Boolean(row));
+
+  const manualRows: SalesDetailRow[] = manualProductSales.map((item) => {
+    const product = productCostMap.get(normalizeProductName(item.product_name));
+    const quantity = Number(item.quantity ?? 0);
+    const salesAmount = Number(item.sales_amount ?? 0);
+    const unitPrice =
+      quantity > 0 ? Math.round((salesAmount / quantity) * 100) / 100 : Number(product?.price ?? 0);
+    const unitCost = Number(product?.unitCost ?? 0);
+    const productCost = quantity * unitCost;
+
+    return {
+      businessDate: item.business_date,
+      month: item.business_date.slice(0, 7),
+      productName: item.product_name,
+      category: product?.category ?? "",
+      quantity,
+      unitPrice,
+      unitCost,
+      salesAmount,
+      productCost,
+      grossProfit: salesAmount - productCost,
+      customerType: "",
+      note: item.notes ?? "",
+    };
+  });
+
+  return [...liveRows, ...manualRows].sort((a, b) => {
+    const dateCompare = a.businessDate.localeCompare(b.businessDate);
+    if (dateCompare !== 0) return dateCompare;
+    return a.productName.localeCompare(b.productName, "zh-Hant");
+  });
 }
 
 function columnToLetter(columnNumber: number) {
@@ -1367,6 +1455,12 @@ export async function syncTodayDashboardToGoogleSheets() {
     productCosts
   );
   const monthlyMetrics = buildMonthlyMetrics(dailyMetrics, fixedExpenses, procurements);
+  const salesDetailRows = buildSalesDetailRows(
+    allSessions,
+    allOrderItems,
+    manualProductSales,
+    productCosts
+  );
 
   const allPaidSessions = allSessions.filter((session) => session.payment_status === "paid");
   const allRevenue = allPaidSessions.reduce((sum, session) => sum + Number(session.total_amount ?? 0), 0);
@@ -1532,60 +1626,32 @@ export async function syncTodayDashboardToGoogleSheets() {
 
   await replaceSheetValues("訂單明細", [
     [
-      "主單ID",
-      "營業日期",
-      "主單編號",
-      "建立時間",
-      "結帳時間",
-      "停留分鐘",
-      "來客數",
-      "訂單狀態",
-      "付款狀態",
-      "付款方式",
-      "餐點小計",
-      "折扣金額",
-      "總計金額",
-      "客人類型",
-      "客人標記",
+      "日期",
+      "月份",
+      "品項",
+      "類別",
+      "銷售數量",
+      "售價",
+      "單位成本",
+      "商品營業額",
+      "商品成本",
+      "毛利",
+      "客群類型",
+      "備註",
     ],
-    ...sortedSessions.map((session) => [
-      session.id,
-      formatBusinessDate(session.created_at ?? ""),
-      session.session_number,
-      session.created_at ?? "",
-      session.paid_at ?? "",
-      calculateStayMinutes(session.created_at, session.paid_at, session.payment_status),
-      Number(session.guest_count ?? 0),
-      session.order_status,
-      session.payment_status,
-      session.payment_method ?? "",
-      Number(session.subtotal_amount ?? 0),
-      Number(session.discount_amount ?? 0),
-      Number(session.total_amount ?? 0),
-      session.customer_type ?? "",
-      session.customer_label ?? "",
-    ]),
-    ...sortedManualSessions.map((session) => [
-      session.id,
-      session.business_date,
-      session.session_number,
-      session.created_at ?? "",
-      session.paid_at ?? "",
-      calculateStayMinutes(
-        session.created_at,
-        session.paid_at,
-        session.payment_status,
-        session.stay_minutes ?? null
-      ),
-      Number(session.guest_count ?? 0),
-      session.order_status ?? "closed",
-      session.payment_status ?? "paid",
-      session.payment_method ?? "",
-      Number(session.subtotal_amount ?? 0),
-      Number(session.discount_amount ?? 0),
-      Number(session.total_amount ?? 0),
-      session.customer_type ?? "",
-      session.customer_label ?? "",
+    ...salesDetailRows.map((row) => [
+      row.businessDate,
+      row.month,
+      row.productName,
+      row.category,
+      row.quantity,
+      row.unitPrice,
+      row.unitCost,
+      row.salesAmount,
+      row.productCost,
+      row.grossProfit,
+      row.customerType,
+      row.note,
     ]),
   ]);
 
@@ -2026,20 +2092,20 @@ export async function syncTodayDashboardToGoogleSheets() {
       title: "訂單明細",
       frozenRows: 1,
       headerRowIndex: 0,
-      dateColumns: [1],
-      currencyColumns: [10, 11, 12],
-      autoResizeColumnCount: 15,
+      dateColumns: [0],
+      currencyColumns: [5, 6, 7, 8, 9],
+      autoResizeColumnCount: 12,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [210, 140, 210, 180, 110, 120, 150, 150, 170, 230, 130, 130, 130, 135, 135],
-      leftAlignColumns: [0, 2, 6, 7, 8, 9],
-      centerAlignColumns: [1, 3, 4, 5, 13, 14],
-      rightAlignColumns: [10, 11, 12],
+      columnWidths: [145, 125, 220, 140, 110, 125, 125, 145, 145, 145, 140, 260],
+      leftAlignColumns: [2, 3, 11],
+      centerAlignColumns: [0, 1, 4, 10],
+      rightAlignColumns: [5, 6, 7, 8, 9],
       columnBackgrounds: [
-        { columns: [0, 1, 2], color: { red: 0.92, green: 0.96, blue: 0.99 } },
-        { columns: [3, 4, 5, 6, 7, 8], color: { red: 0.95, green: 0.97, blue: 0.93 } },
-        { columns: [10, 11, 12], color: { red: 1, green: 0.96, blue: 0.9 } },
-        { columns: [9, 13, 14], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+        { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [2, 3, 10], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+        { columns: [5, 6, 7, 8, 9], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [4, 11], color: { red: 0.97, green: 0.97, blue: 0.97 } },
       ],
     },
     {
