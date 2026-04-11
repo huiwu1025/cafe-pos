@@ -184,6 +184,10 @@ type SheetStyleConfig = {
   headerRowHeight?: number;
   bodyRowHeight?: number;
   columnWidths?: Array<number | null | undefined>;
+  columnBackgrounds?: Array<{
+    columns: number[];
+    color: { red: number; green: number; blue: number };
+  }>;
 };
 
 const TAIPEI_TIMEZONE = "Asia/Taipei";
@@ -1112,6 +1116,28 @@ async function applySheetStyles(configs: SheetStyleConfig[]) {
       });
     }
 
+    for (const group of config.columnBackgrounds ?? []) {
+      for (const columnIndex of group.columns) {
+        requests.push({
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: (config.headerRowIndex ?? 0) + 1,
+              endRowIndex: 200,
+              startColumnIndex: columnIndex,
+              endColumnIndex: columnIndex + 1,
+            },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: group.color,
+              },
+            },
+            fields: "userEnteredFormat.backgroundColor",
+          },
+        });
+      }
+    }
+
     for (const columnIndex of config.currencyColumns ?? []) {
       requests.push({
         repeatCell: {
@@ -1178,7 +1204,7 @@ async function applySheetStyles(configs: SheetStyleConfig[]) {
       });
     }
 
-    if (config.autoResizeColumnCount != null) {
+    if (config.autoResizeColumnCount != null && !(config.columnWidths?.length)) {
       requests.push({
         autoResizeDimensions: {
           dimensions: {
@@ -1885,7 +1911,14 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 19,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [120, 110, 95, 95, 100, 100, 105, 115, 115, 115, 115, 115, 115, 100, 115, 115, 115, 115, 170],
+      columnWidths: [140, 130, 120, 120, 135, 135, 135, 125, 125, 125, 125, 125, 125, 120, 125, 125, 125, 125, 220],
+      columnBackgrounds: [
+        { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [1, 2, 3, 4, 5, 6], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+        { columns: [7, 8, 9, 10, 11, 12, 14, 15, 16, 17], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [13], color: { red: 0.93, green: 0.95, blue: 1 } },
+        { columns: [18], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+      ],
     },
     {
       title: "現金清點",
@@ -1896,7 +1929,12 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 11,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [120, 110, 200, 160, 110, 200, 160, 110, 110, 110, 180],
+      columnWidths: [135, 125, 240, 190, 125, 240, 190, 125, 125, 125, 220],
+      columnBackgrounds: [
+        { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [1, 4, 7, 8, 9], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [2, 3, 5, 6, 10], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+      ],
     },
     {
       title: "訂單明細",
@@ -1907,7 +1945,13 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 15,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [170, 120, 170, 150, 90, 100, 120, 120, 140, 180, 115, 115, 115, 120, 120],
+      columnWidths: [210, 140, 210, 180, 110, 120, 150, 150, 170, 230, 130, 130, 130, 135, 135],
+      columnBackgrounds: [
+        { columns: [0, 1, 2], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [3, 4, 5, 6, 7, 8], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+        { columns: [10, 11, 12], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [9, 13, 14], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+      ],
     },
     {
       title: "品項成本表",
@@ -1918,7 +1962,13 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 8,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [180, 120, 110, 110, 120, 110, 110, 200],
+      columnWidths: [220, 150, 130, 130, 140, 125, 125, 240],
+      columnBackgrounds: [
+        { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [2, 3, 4], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [5], color: { red: 0.93, green: 0.95, blue: 1 } },
+        { columns: [6, 7], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+      ],
     },
     {
       title: "固定支出",
@@ -1929,7 +1979,13 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 7,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [120, 110, 220, 120, 110, 110, 220],
+      columnWidths: [135, 125, 260, 150, 130, 130, 260],
+      columnBackgrounds: [
+        { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [2, 3], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+        { columns: [4], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [5, 6], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+      ],
     },
     {
       title: "進貨耗材",
@@ -1940,7 +1996,13 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 9,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [120, 110, 180, 120, 110, 95, 120, 180, 220],
+      columnWidths: [135, 125, 210, 140, 125, 105, 135, 220, 260],
+      columnBackgrounds: [
+        { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [2, 3], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+        { columns: [4, 5, 6], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [7, 8], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+      ],
     },
     {
       title: "每日總覽",
@@ -1951,7 +2013,14 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 18,
       headerRowHeight: 44,
       bodyRowHeight: 36,
-      columnWidths: [120, 110, 90, 120, 115, 115, 115, 100, 100, 115, 100, 120, 115, 120, 110, 110, 110, 120],
+      columnWidths: [145, 125, 105, 145, 130, 130, 130, 115, 115, 130, 115, 145, 135, 145, 130, 120, 120, 145],
+      columnBackgrounds: [
+        { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [2], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+        { columns: [3, 4, 5, 6, 7, 8, 9, 10, 11], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [12, 13, 15, 16, 17], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+        { columns: [14], color: { red: 1, green: 0.92, blue: 0.92 } },
+      ],
     },
     {
       title: "品項分析",
@@ -1962,7 +2031,14 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 12,
       headerRowHeight: 44,
       bodyRowHeight: 36,
-      columnWidths: [180, 120, 110, 110, 95, 120, 120, 120, 100, 110, 100, 150],
+      columnWidths: [220, 150, 130, 130, 115, 145, 145, 145, 120, 125, 120, 180],
+      columnBackgrounds: [
+        { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [2, 3, 5, 6, 7], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [4], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+        { columns: [8, 10], color: { red: 0.93, green: 0.95, blue: 1 } },
+        { columns: [9, 11], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+      ],
     },
     {
       title: "月總表",
@@ -1972,7 +2048,13 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 15,
       headerRowHeight: 44,
       bodyRowHeight: 36,
-      columnWidths: [110, 90, 120, 100, 115, 100, 110, 100, 120, 120, 120, 120, 100, 120, 120],
+      columnWidths: [125, 105, 145, 115, 130, 115, 125, 115, 145, 145, 145, 145, 120, 145, 145],
+      columnBackgrounds: [
+        { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [1], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+        { columns: [2, 3, 4, 5, 6, 7, 8], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [9, 10, 11, 12, 13, 14], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+      ],
     },
     {
       title: "品項毛利",
@@ -1983,7 +2065,13 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 9,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [180, 120, 95, 120, 110, 120, 120, 100, 180],
+      columnWidths: [220, 150, 115, 145, 130, 145, 145, 120, 220],
+      columnBackgrounds: [
+        { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [2, 3, 4, 5, 6], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [7], color: { red: 0.93, green: 0.95, blue: 1 } },
+        { columns: [8], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+      ],
     },
     {
       title: "付款方式淨收入",
@@ -1993,7 +2081,12 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 5,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [160, 90, 120, 120, 120],
+      columnWidths: [190, 110, 145, 145, 145],
+      columnBackgrounds: [
+        { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [1], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+        { columns: [2, 3, 4], color: { red: 1, green: 0.96, blue: 0.9 } },
+      ],
     },
     {
       title: "每日毛利",
@@ -2005,7 +2098,13 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 8,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [120, 120, 120, 120, 100, 120, 120, 170],
+      columnWidths: [145, 145, 145, 145, 120, 145, 145, 210],
+      columnBackgrounds: [
+        { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [1, 2, 3, 5, 6], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [4], color: { red: 0.93, green: 0.95, blue: 1 } },
+        { columns: [7], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+      ],
     },
     {
       title: "客群停留分析",
@@ -2014,7 +2113,12 @@ export async function syncTodayDashboardToGoogleSheets() {
       autoResizeColumnCount: 6,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [140, 100, 140, 140, 140, 120],
+      columnWidths: [170, 120, 170, 170, 170, 145],
+      columnBackgrounds: [
+        { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [1], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+        { columns: [2, 3, 4, 5], color: { red: 1, green: 0.96, blue: 0.9 } },
+      ],
     },
   ]);
 
