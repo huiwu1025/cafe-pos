@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+﻿import { createClient } from "@supabase/supabase-js";
 import {
   batchUpdateSpreadsheet,
   getSheetIdByTitle,
@@ -1784,26 +1784,6 @@ export async function syncTodayDashboardToGoogleSheets() {
         new Date().toISOString(),
       ],
     ]
-  );
-
-  await mergeRowsByKey(
-    "訂單明細",
-    ["主單ID", "營業日期", "主單編號", "建立時間", "來客數", "訂單狀態", "付款狀態", "付款方式", "餐點小計", "折扣金額", "總計金額", "客人類型", "客人標記"],
-    sessions.map((session) => [
-      session.id,
-      businessDate,
-      session.session_number,
-      session.created_at ?? "",
-      Number(session.guest_count ?? 0),
-      session.order_status,
-      session.payment_status,
-      session.payment_method ?? "",
-      Number(session.subtotal_amount ?? 0),
-      Number(session.discount_amount ?? 0),
-      Number(session.total_amount ?? 0),
-      session.customer_type ?? "",
-      session.customer_label ?? "",
-    ])
   );
 
   await replaceSheetValues("品項成本", [
