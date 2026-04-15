@@ -120,6 +120,21 @@ export async function getSheetIdByTitle(title: string, spreadsheetId?: string) {
   );
 }
 
+export async function getEmbeddedChartIdsByTitle(title: string, spreadsheetId?: string) {
+  const metadata = (await sheetsRequest(
+    "?fields=sheets.properties.sheetId,sheets.properties.title,sheets.charts.chartId",
+    undefined,
+    spreadsheetId
+  )) as {
+    sheets?: { properties?: { sheetId?: number; title?: string }; charts?: { chartId?: number }[] }[];
+  };
+
+  const targetSheet = metadata.sheets?.find((sheet) => sheet.properties?.title === title);
+  return (targetSheet?.charts ?? [])
+    .map((chart) => chart.chartId)
+    .filter((chartId): chartId is number => typeof chartId === "number");
+}
+
 export async function batchUpdateSpreadsheet(
   requests: Record<string, unknown>[],
   spreadsheetId?: string

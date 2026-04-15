@@ -1,6 +1,7 @@
 ﻿import { createClient } from "@supabase/supabase-js";
 import {
   batchUpdateSpreadsheet,
+  getEmbeddedChartIdsByTitle,
   getSheetIdByTitle,
   listSheetTitles,
   mergeRowsByKey,
@@ -1488,6 +1489,136 @@ async function applySheetDropdowns() {
   await batchUpdateSpreadsheet(requests);
 }
 
+async function applySheetCharts(itemEntryCount: number, stayEntryCount: number) {
+  const requests: Record<string, unknown>[] = [];
+
+  const chartSheets = ["品項分析", "客群停留分析"];
+  for (const title of chartSheets) {
+    const chartIds = await getEmbeddedChartIdsByTitle(title);
+    for (const chartId of chartIds) {
+      requests.push({
+        deleteEmbeddedObject: {
+          objectId: chartId,
+        },
+      });
+    }
+  }
+
+  const itemAnalysisSheetId = await getSheetIdByTitle("品項分析");
+  if (itemAnalysisSheetId != null && itemEntryCount > 0) {
+    requests.push({
+      addChart: {
+        chart: {
+          spec: {
+            title: "品項營業額占比",
+            pieChart: {
+              legendPosition: "RIGHT_LEGEND",
+              domain: {
+                sourceRange: {
+                  sources: [
+                    {
+                      sheetId: itemAnalysisSheetId,
+                      startRowIndex: 5,
+                      endRowIndex: itemEntryCount + 5,
+                      startColumnIndex: 0,
+                      endColumnIndex: 1,
+                    },
+                  ],
+                },
+              },
+              series: {
+                sourceRange: {
+                  sources: [
+                    {
+                      sheetId: itemAnalysisSheetId,
+                      startRowIndex: 5,
+                      endRowIndex: itemEntryCount + 5,
+                      startColumnIndex: 5,
+                      endColumnIndex: 6,
+                    },
+                  ],
+                },
+              },
+              threeDimensional: false,
+            },
+          },
+          position: {
+            overlayPosition: {
+              anchorCell: {
+                sheetId: itemAnalysisSheetId,
+                rowIndex: 0,
+                columnIndex: 13,
+              },
+              offsetXPixels: 8,
+              offsetYPixels: 8,
+              widthPixels: 420,
+              heightPixels: 240,
+            },
+          },
+        },
+      },
+    });
+  }
+
+  const staySheetId = await getSheetIdByTitle("客群停留分析");
+  if (staySheetId != null && stayEntryCount > 0) {
+    requests.push({
+      addChart: {
+        chart: {
+          spec: {
+            title: "來客占比圓餅圖",
+            pieChart: {
+              legendPosition: "RIGHT_LEGEND",
+              domain: {
+                sourceRange: {
+                  sources: [
+                    {
+                      sheetId: staySheetId,
+                      startRowIndex: 1,
+                      endRowIndex: stayEntryCount + 1,
+                      startColumnIndex: 7,
+                      endColumnIndex: 8,
+                    },
+                  ],
+                },
+              },
+              series: {
+                sourceRange: {
+                  sources: [
+                    {
+                      sheetId: staySheetId,
+                      startRowIndex: 1,
+                      endRowIndex: stayEntryCount + 1,
+                      startColumnIndex: 8,
+                      endColumnIndex: 9,
+                    },
+                  ],
+                },
+              },
+              threeDimensional: false,
+            },
+          },
+          position: {
+            overlayPosition: {
+              anchorCell: {
+                sheetId: staySheetId,
+                rowIndex: 1,
+                columnIndex: 10,
+              },
+              offsetXPixels: 8,
+              offsetYPixels: 8,
+              widthPixels: 420,
+              heightPixels: 240,
+            },
+          },
+        },
+      },
+    });
+  }
+
+  await batchUpdateSpreadsheet(requests);
+}
+
 export async function syncTodayDashboardToGoogleSheets() {
   const supabase = getSupabaseServerClient();
   const sourceSpreadsheetId = getCostSpreadsheetId();
@@ -1795,11 +1926,6 @@ export async function syncTodayDashboardToGoogleSheets() {
   }
 
   const stayAnalysisEntries = Array.from(stayAnalysisMap.entries());
-  const stayChartFormula =
-    stayAnalysisEntries.length > 0
-      ? `=SPARKLINE(I2:I${stayAnalysisEntries.length + 1},{"charttype","pie"})`
-      : "";
-
   await replaceSheetValues("客群停留分析", [
     ["客人類型", "訂單數", "平均停留分鐘", "最長停留分鐘", "最短停留分鐘", "平均停留小時", "", "客群圖例", "訂單數", "", "來客占比圓餅圖"],
     ...stayAnalysisEntries.map(([customerType, item], index) => [
@@ -1813,7 +1939,7 @@ export async function syncTodayDashboardToGoogleSheets() {
       customerType,
       item.count,
       "",
-      index === 0 ? stayChartFormula : "",
+      index === 0 ? "圖表由同步程式自動建立" : "",
     ]),
   ]);
 
@@ -2438,6 +2564,7 @@ export async function syncTodayDashboardToGoogleSheets() {
     },
   ]);
   await applySheetDropdowns();
+  await applySheetCharts(itemEntries.length, stayAnalysisEntries.length);
 
   return {
     businessDate,
