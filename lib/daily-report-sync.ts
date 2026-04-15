@@ -106,6 +106,8 @@ type FixedExpenseRow = {
   item: string;
   type: string;
   amount: number;
+  shippingFee: number;
+  totalAmount: number;
   isPaid: boolean;
   note: string;
 };
@@ -117,6 +119,7 @@ type ProcurementRow = {
   type: string;
   unitPrice: number;
   quantity: number;
+  shippingFee: number;
   totalAmount: number;
   supplier: string;
   note: string;
@@ -565,7 +568,7 @@ async function loadFixedExpenses(sourceSpreadsheetId?: string) {
       ? await readSheetValues(SOURCE_FIXED_EXPENSE_SHEET, sourceSpreadsheetId)
       : [];
   const rows = rowsFromReport.length > 0 ? rowsFromReport : rowsFromSource;
-  const headerIndex = findHeaderRowIndex(rows, ["日期", "月份", "支出項目", "類型", "金額"]);
+  const headerIndex = findHeaderRowIndex(rows, ["日期", "月份", "支出項目", "類型"]);
   const items: FixedExpenseRow[] = [];
 
   if (headerIndex >= 0) {
@@ -577,13 +580,17 @@ async function loadFixedExpenses(sourceSpreadsheetId?: string) {
       const item = mapped.get("支出項目") ?? "";
       const type = mapped.get("類型") ?? "";
       const amount = toNumber(mapped.get("金額"));
-      if (!date || !amount) continue;
+      const shippingFee = toNumber(mapped.get("運費"));
+      const totalAmount = toNumber(mapped.get("總支出")) || amount + shippingFee;
+      if (!date || (!amount && !shippingFee && !totalAmount)) continue;
       items.push({
         date,
         month,
         item,
         type,
         amount,
+        shippingFee,
+        totalAmount,
         isPaid: isTruthyPaid(mapped.get("是否已付款") ?? ""),
         note: mapped.get("備註") ?? "",
       });
@@ -600,7 +607,7 @@ async function loadProcurements(sourceSpreadsheetId?: string) {
       ? await readSheetValues(SOURCE_PROCUREMENT_SHEET, sourceSpreadsheetId)
       : [];
   const rows = rowsFromReport.length > 0 ? rowsFromReport : rowsFromSource;
-  const headerIndex = findHeaderRowIndex(rows, ["日期", "月份", "品項", "類型", "總金額"]);
+  const headerIndex = findHeaderRowIndex(rows, ["日期", "月份", "品項", "類型"]);
   const items: ProcurementRow[] = [];
 
   if (headerIndex >= 0) {
@@ -609,15 +616,19 @@ async function loadProcurements(sourceSpreadsheetId?: string) {
       const mapped = mapRowByHeader(headers, row);
       const date = mapped.get("日期") ?? "";
       const month = mapped.get("月份") ?? (date ? String(date).slice(0, 7) : "");
-      const totalAmount = toNumber(mapped.get("總金額"));
-      if (!date || !totalAmount) continue;
+      const unitPrice = toNumber(mapped.get("單價"));
+      const quantity = toNumber(mapped.get("數量"));
+      const shippingFee = toNumber(mapped.get("運費"));
+      const totalAmount = toNumber(mapped.get("總金額")) || unitPrice * quantity + shippingFee;
+      if (!date || (!unitPrice && !quantity && !shippingFee && !totalAmount)) continue;
       items.push({
         date,
         month,
         item: mapped.get("品項") ?? "",
         type: mapped.get("類型") ?? "",
-        unitPrice: toNumber(mapped.get("單價")),
-        quantity: toNumber(mapped.get("數量")),
+        unitPrice,
+        quantity,
+        shippingFee,
         totalAmount,
         supplier: mapped.get("供應商") ?? "",
         note: mapped.get("備註") ?? "",
@@ -778,7 +789,7 @@ function buildDailyMetric(
   const paidFixedExpenses = fixedExpenses.filter((item) => item.date === date && item.isPaid);
   const rent = paidFixedExpenses.reduce((sum, item) => {
     const joined = `${item.type} ${item.item}`;
-    return joined.includes("場租") ? sum + item.amount : sum;
+    return joined.includes("場租") ? sum + item.totalAmount : sum;
   }, 0);
   const reconciliationDiff =
     cashCount?.closing_cash != null
@@ -1082,13 +1093,13 @@ async function syncSourceTemplateSheets(
     .filter((item) => item.month.startsWith(currentYear) && item.isPaid)
     .reduce((sum, item) => {
       const joined = `${item.type} ${item.item}`;
-      return joined.includes("場租") ? sum + item.amount : sum;
+      return joined.includes("場租") ? sum + item.totalAmount : sum;
     }, 0);
   const yearlyFixedExpense = fixedExpenses
     .filter((item) => item.month.startsWith(currentYear) && item.isPaid)
     .reduce((sum, item) => {
       const joined = `${item.type} ${item.item}`;
-      return joined.includes("場租") ? sum : sum + item.amount;
+      return joined.includes("場租") ? sum : sum + item.totalAmount;
     }, 0);
   const yearlyProcurement = procurements
     .filter((item) => item.month.startsWith(currentYear))
@@ -1566,7 +1577,7 @@ export async function syncTodayDashboardToGoogleSheets() {
   );
   const fixedExpenseTotal = fixedExpenses
     .filter((item) => item.isPaid)
-    .reduce((sum, item) => sum + item.amount, 0);
+    .reduce((sum, item) => sum + item.totalAmount, 0);
   const cumulativeProfit = allNetRevenue - allEstimatedCost - fixedExpenseTotal;
   const allGrossProfit = allRevenue - allEstimatedCost;
   const allGrossMargin = allRevenue > 0 ? allGrossProfit / allRevenue : "";
@@ -1783,15 +1794,26 @@ export async function syncTodayDashboardToGoogleSheets() {
     );
   }
 
+  const stayAnalysisEntries = Array.from(stayAnalysisMap.entries());
+  const stayChartFormula =
+    stayAnalysisEntries.length > 0
+      ? `=SPARKLINE(I2:I${stayAnalysisEntries.length + 1},{"charttype","pie";"color1","#2563eb";"color2","#16a34a";"color3","#f59e0b";"color4","#ef4444";"color5","#8b5cf6"})`
+      : "";
+
   await replaceSheetValues("客群停留分析", [
-    ["客人類型", "訂單數", "平均停留分鐘", "最長停留分鐘", "最短停留分鐘", "平均停留小時"],
-    ...Array.from(stayAnalysisMap.entries()).map(([customerType, item]) => [
+    ["客人類型", "訂單數", "平均停留分鐘", "最長停留分鐘", "最短停留分鐘", "平均停留小時", "", "客群圖例", "訂單數", "", "來客占比圓餅圖"],
+    ...stayAnalysisEntries.map(([customerType, item], index) => [
       customerType,
       item.count,
       item.count > 0 ? Math.round(item.totalMinutes / item.count) : 0,
       item.maxMinutes,
       item.minMinutes === Number.POSITIVE_INFINITY ? 0 : item.minMinutes,
       item.count > 0 ? Number((item.totalMinutes / item.count / 60).toFixed(2)) : 0,
+      "",
+      customerType,
+      item.count,
+      "",
+      index === 0 ? stayChartFormula : "",
     ]),
   ]);
 
@@ -1961,7 +1983,7 @@ export async function syncTodayDashboardToGoogleSheets() {
   await syncSourceTemplateSheets(dailyMetrics, allItemSummary, monthlyMetrics, productCosts, fixedExpenses, procurements);
 
   await replaceSheetValues("固定支出", [
-    ["日期", "月份", "支出項目", "類型", "金額", "是否已付款", "備註"],
+    ["日期", "月份", "支出項目", "類型", "金額", "運費", "總支出", "是否已付款", "備註"],
     ...fixedExpenses.map((item, index) => {
       const row = index + 2;
       return [
@@ -1970,6 +1992,8 @@ export async function syncTodayDashboardToGoogleSheets() {
         item.item,
         item.type,
         item.amount,
+        item.shippingFee,
+        `=IF(AND(E${row}="",F${row}=""),"",E${row}+F${row})`,
         item.isPaid ? "是" : "否",
         item.note,
       ];
@@ -1977,7 +2001,7 @@ export async function syncTodayDashboardToGoogleSheets() {
   ]);
 
   await replaceSheetValues("進貨耗材", [
-    ["日期", "月份", "品項", "類型", "單價", "數量", "總金額", "供應商", "備註"],
+    ["日期", "月份", "品項", "類型", "單價", "數量", "運費", "總金額", "供應商", "備註"],
     ...procurements.map((item, index) => {
       const row = index + 2;
       return [
@@ -1987,7 +2011,8 @@ export async function syncTodayDashboardToGoogleSheets() {
         item.type,
         item.unitPrice,
         item.quantity,
-        `=IF(OR(E${row}="",F${row}=""),"",E${row}*F${row})`,
+        item.shippingFee,
+        `=IF(AND(E${row}="",F${row}="",G${row}=""),"",E${row}*F${row}+G${row})`,
         item.supplier,
         item.note,
       ];
@@ -2087,8 +2112,8 @@ export async function syncTodayDashboardToGoogleSheets() {
       `=SUMIF(每日總覽!B:B,A${row},每日總覽!K:K)`,
       `=SUMIF(每日總覽!B:B,A${row},每日總覽!L:L)`,
       `=SUMIF(每日總覽!B:B,A${row},每日總覽!M:M)`,
-      `=SUMIF(進貨耗材!B:B,A${row},進貨耗材!G:G)`,
-      `=SUMIFS(固定支出!E:E,固定支出!B:B,A${row},固定支出!D:D,"<>場租")`,
+      `=SUMIF(進貨耗材!B:B,A${row},進貨耗材!H:H)`,
+      `=SUMIFS(固定支出!G:G,固定支出!B:B,A${row},固定支出!D:D,"<>場租")`,
       `=SUMIF(每日總覽!B:B,A${row},每日總覽!P:P)`,
       `=I${row}-J${row}-K${row}-L${row}-M${row}-SUMIF(每日總覽!B:B,A${row},每日總覽!Q:Q)`,
       `=I${row}-K${row}-L${row}-M${row}`,
@@ -2105,6 +2130,35 @@ export async function syncTodayDashboardToGoogleSheets() {
     [],
     ["月份", "客人數", "商品營業額", "小費", "其他收入", "折扣", "招待/未收", "退款", "實收金額", "商品成本(依銷售)", "進貨/耗材支出", "固定/其他支出", "場租", "淨收入", "淨現金流"],
     ...monthRows,
+  ]);
+
+  await replaceSheetValues("財報", [
+    ["財報項目", "數值", "", "", "月別財報", "商品營業額", "實收金額", "總支出", "淨收入"],
+    ["累積商品營業額", `=SUM(月總表!C9:C20)`],
+    ["累積實收金額", `=SUM(月總表!I9:I20)`],
+    ["累積商品成本", `=SUM(月總表!J9:J20)`],
+    ["累積進貨耗材", `=SUM(月總表!K9:K20)`],
+    ["累積固定支出", `=SUM(月總表!L9:L20)`],
+    ["累積場租", `=SUM(月總表!M9:M20)`],
+    ["累積手續費", `=SUM(每日總覽!Q:Q)`],
+    ["累積淨收入", `=SUM(月總表!N9:N20)`],
+    [],
+    ["月份", "", "", "", "月份", "商品營業額", "實收金額", "總支出", "淨收入"],
+    ...Array.from({ length: 12 }, (_, index) => {
+      const sourceRow = index + 9;
+      const targetRow = index + 12;
+      return [
+        `=月總表!A${sourceRow}`,
+        "",
+        "",
+        "",
+        `=月總表!A${sourceRow}`,
+        `=月總表!C${sourceRow}`,
+        `=月總表!I${sourceRow}`,
+        `=月總表!J${sourceRow}+月總表!K${sourceRow}+月總表!L${sourceRow}+月總表!M${sourceRow}+SUMIF(每日總覽!B:B,E${targetRow},每日總覽!Q:Q)`,
+        `=月總表!N${sourceRow}`,
+      ];
+    }),
   ]);
 
   await applySheetStyles([
@@ -2194,19 +2248,19 @@ export async function syncTodayDashboardToGoogleSheets() {
       frozenRows: 1,
       headerRowIndex: 0,
       dateColumns: [0],
-      currencyColumns: [4],
-      autoResizeColumnCount: 7,
+      currencyColumns: [4, 5, 6],
+      autoResizeColumnCount: 9,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [135, 125, 260, 150, 130, 130, 260],
-      leftAlignColumns: [2, 3, 6],
-      centerAlignColumns: [0, 1, 5],
-      rightAlignColumns: [4],
+      columnWidths: [135, 125, 220, 150, 130, 120, 135, 120, 240],
+      leftAlignColumns: [2, 3, 8],
+      centerAlignColumns: [0, 1, 7],
+      rightAlignColumns: [4, 5, 6],
       columnBackgrounds: [
         { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [2, 3], color: { red: 0.95, green: 0.97, blue: 0.93 } },
-        { columns: [4], color: { red: 1, green: 0.96, blue: 0.9 } },
-        { columns: [5, 6], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+        { columns: [4, 5, 6], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [7, 8], color: { red: 0.97, green: 0.97, blue: 0.97 } },
       ],
     },
     {
@@ -2214,19 +2268,19 @@ export async function syncTodayDashboardToGoogleSheets() {
       frozenRows: 1,
       headerRowIndex: 0,
       dateColumns: [0],
-      currencyColumns: [4, 6],
-      autoResizeColumnCount: 9,
+      currencyColumns: [4, 6, 7],
+      autoResizeColumnCount: 10,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [135, 125, 210, 140, 125, 105, 135, 220, 260],
-      leftAlignColumns: [2, 3, 7, 8],
+      columnWidths: [135, 125, 210, 140, 125, 105, 120, 140, 220, 260],
+      leftAlignColumns: [2, 3, 8, 9],
       centerAlignColumns: [0, 1, 5],
-      rightAlignColumns: [4, 6],
+      rightAlignColumns: [4, 6, 7],
       columnBackgrounds: [
         { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [2, 3], color: { red: 0.95, green: 0.97, blue: 0.93 } },
-        { columns: [4, 5, 6], color: { red: 1, green: 0.96, blue: 0.9 } },
-        { columns: [7, 8], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+        { columns: [4, 5, 6, 7], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [8, 9], color: { red: 0.97, green: 0.97, blue: 0.97 } },
       ],
     },
     {
@@ -2351,17 +2405,35 @@ export async function syncTodayDashboardToGoogleSheets() {
       title: "客群停留分析",
       frozenRows: 1,
       headerRowIndex: 0,
-      autoResizeColumnCount: 6,
+      autoResizeColumnCount: 11,
       headerRowHeight: 42,
       bodyRowHeight: 34,
-      columnWidths: [170, 120, 170, 170, 170, 145],
-      leftAlignColumns: [0],
-      centerAlignColumns: [1],
+      columnWidths: [170, 120, 170, 170, 170, 145, 30, 170, 120, 30, 260],
+      leftAlignColumns: [0, 7],
+      centerAlignColumns: [1, 8],
       rightAlignColumns: [2, 3, 4, 5],
       columnBackgrounds: [
         { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [1], color: { red: 0.95, green: 0.97, blue: 0.93 } },
         { columns: [2, 3, 4, 5], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [7, 8], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+        { columns: [10], color: { red: 0.93, green: 0.95, blue: 1 } },
+      ],
+    },
+    {
+      title: "財報",
+      frozenRows: 1,
+      headerRowIndex: 0,
+      currencyColumns: [1, 5, 6, 7, 8],
+      autoResizeColumnCount: 9,
+      headerRowHeight: 42,
+      bodyRowHeight: 34,
+      columnWidths: [180, 145, 40, 40, 150, 145, 145, 145, 145],
+      leftAlignColumns: [0, 4],
+      rightAlignColumns: [1, 5, 6, 7, 8],
+      columnBackgrounds: [
+        { columns: [0, 4], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [1, 5, 6, 7, 8], color: { red: 1, green: 0.96, blue: 0.9 } },
       ],
     },
   ]);
