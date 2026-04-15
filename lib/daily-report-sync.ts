@@ -558,8 +558,13 @@ async function loadProductCosts(sourceSpreadsheetId?: string) {
   };
 }
 
-async function loadFixedExpenses(sourceSpreadsheetId: string) {
-  const rows = await readSheetValues(SOURCE_FIXED_EXPENSE_SHEET, sourceSpreadsheetId);
+async function loadFixedExpenses(sourceSpreadsheetId?: string) {
+  const rowsFromReport = await readSheetValues("固定支出");
+  const rowsFromSource =
+    rowsFromReport.length === 0 && sourceSpreadsheetId
+      ? await readSheetValues(SOURCE_FIXED_EXPENSE_SHEET, sourceSpreadsheetId)
+      : [];
+  const rows = rowsFromReport.length > 0 ? rowsFromReport : rowsFromSource;
   const headerIndex = findHeaderRowIndex(rows, ["日期", "月份", "支出項目", "類型", "金額"]);
   const items: FixedExpenseRow[] = [];
 
@@ -1428,6 +1433,50 @@ async function applySheetStyles(configs: SheetStyleConfig[]) {
   await batchUpdateSpreadsheet(requests);
 }
 
+async function applySheetDropdowns() {
+  const dropdownConfigs = [
+    {
+      title: "進貨耗材",
+      columnIndex: 3,
+      values: ["飲品原料", "食品原料", "包材", "咖啡豆", "雜費"],
+    },
+    {
+      title: "固定支出",
+      columnIndex: 3,
+      values: ["場租", "設備", "人力"],
+    },
+  ];
+
+  const requests: Record<string, unknown>[] = [];
+
+  for (const config of dropdownConfigs) {
+    const sheetId = await getSheetIdByTitle(config.title);
+    if (sheetId == null) continue;
+
+    requests.push({
+      setDataValidation: {
+        range: {
+          sheetId,
+          startRowIndex: 1,
+          endRowIndex: 1000,
+          startColumnIndex: config.columnIndex,
+          endColumnIndex: config.columnIndex + 1,
+        },
+        rule: {
+          condition: {
+            type: "ONE_OF_LIST",
+            values: config.values.map((value) => ({ userEnteredValue: value })),
+          },
+          strict: true,
+          showCustomUi: true,
+        },
+      },
+    });
+  }
+
+  await batchUpdateSpreadsheet(requests);
+}
+
 export async function syncTodayDashboardToGoogleSheets() {
   const supabase = getSupabaseServerClient();
   const sourceSpreadsheetId = getCostSpreadsheetId();
@@ -1443,7 +1492,7 @@ export async function syncTodayDashboardToGoogleSheets() {
   const availableSheets = sourceSpreadsheetId ? await listSheetTitles(sourceSpreadsheetId) : [];
   const productCostLoadResult = await loadProductCosts(sourceSpreadsheetId || undefined);
   const productCosts = productCostLoadResult.items;
-  const fixedExpenses = sourceSpreadsheetId ? await loadFixedExpenses(sourceSpreadsheetId) : [];
+  const fixedExpenses = await loadFixedExpenses(sourceSpreadsheetId || undefined);
   const procurements = await loadProcurements(sourceSpreadsheetId || undefined);
 
   const sessions = allSessions.filter(
@@ -1913,15 +1962,18 @@ export async function syncTodayDashboardToGoogleSheets() {
 
   await replaceSheetValues("固定支出", [
     ["日期", "月份", "支出項目", "類型", "金額", "是否已付款", "備註"],
-    ...fixedExpenses.map((item) => [
-      item.date,
-      item.month,
-      item.item,
-      item.type,
-      item.amount,
-      item.isPaid ? "是" : "否",
-      item.note,
-    ]),
+    ...fixedExpenses.map((item, index) => {
+      const row = index + 2;
+      return [
+        item.date,
+        `=IF(A${row}="","",TEXT(A${row},"yyyy-mm"))`,
+        item.item,
+        item.type,
+        item.amount,
+        item.isPaid ? "是" : "否",
+        item.note,
+      ];
+    }),
   ]);
 
   await replaceSheetValues("進貨耗材", [
@@ -2313,6 +2365,7 @@ export async function syncTodayDashboardToGoogleSheets() {
       ],
     },
   ]);
+  await applySheetDropdowns();
 
   return {
     businessDate,
