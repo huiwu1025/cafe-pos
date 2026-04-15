@@ -476,7 +476,8 @@ export default function SessionPage() {
           item.note === specNote &&
           item.status === "active" &&
           (item.custom_note ?? "") === "" &&
-          !item.is_complimentary
+          !item.is_complimentary &&
+          !item.is_served
       );
 
       if (existingItem) {
