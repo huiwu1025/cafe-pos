@@ -211,7 +211,14 @@ type SheetStyleConfig = {
     columns: number[];
     color: { red: number; green: number; blue: number };
   }>;
-};
+  customNumberFormats?: Array<{
+    startRowIndex: number;
+    endRowIndex: number;
+    columnIndex: number;
+    type: "NUMBER" | "PERCENT" | "CURRENCY";
+    pattern: string;
+  }>;
+  };
 
 const TAIPEI_TIMEZONE = "Asia/Taipei";
 const SOURCE_PRODUCT_COST_SHEET = "品項成本表";
@@ -1406,9 +1413,9 @@ async function applySheetStyles(configs: SheetStyleConfig[]) {
       });
     }
 
-    for (const columnIndex of config.dateColumns ?? []) {
-      requests.push({
-        repeatCell: {
+      for (const columnIndex of config.dateColumns ?? []) {
+        requests.push({
+          repeatCell: {
           range: {
             sheetId,
             startRowIndex: (config.headerRowIndex ?? 0) + 1,
@@ -1425,11 +1432,34 @@ async function applySheetStyles(configs: SheetStyleConfig[]) {
           },
           fields: "userEnteredFormat.numberFormat",
         },
-      });
-    }
+        });
+      }
 
-    if (config.autoResizeColumnCount != null && !(config.columnWidths?.length)) {
-      requests.push({
+      for (const format of config.customNumberFormats ?? []) {
+        requests.push({
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: format.startRowIndex,
+              endRowIndex: format.endRowIndex,
+              startColumnIndex: format.columnIndex,
+              endColumnIndex: format.columnIndex + 1,
+            },
+            cell: {
+              userEnteredFormat: {
+                numberFormat: {
+                  type: format.type,
+                  pattern: format.pattern,
+                },
+              },
+            },
+            fields: "userEnteredFormat.numberFormat",
+          },
+        });
+      }
+
+      if (config.autoResizeColumnCount != null && !(config.columnWidths?.length)) {
+        requests.push({
         autoResizeDimensions: {
           dimensions: {
             sheetId,
@@ -2584,23 +2614,29 @@ export async function syncTodayDashboardToGoogleSheets() {
         { rowIndex: 13, pixelSize: 38 },
       ],
     },
-    {
-      title: "財務分析",
-      frozenRows: 1,
-      headerRowIndex: 0,
-      currencyColumns: [1],
-      autoResizeColumnCount: 4,
-      headerRowHeight: 42,
-      bodyRowHeight: 34,
-      columnWidths: [180, 150, 40, 280],
-      leftAlignColumns: [0, 3],
-      rightAlignColumns: [1],
-      columnBackgrounds: [
-        { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
-        { columns: [1], color: { red: 1, green: 0.96, blue: 0.9 } },
-        { columns: [3], color: { red: 0.97, green: 0.97, blue: 0.97 } },
-      ],
-    },
+      {
+        title: "財務分析",
+        frozenRows: 1,
+        headerRowIndex: 0,
+        autoResizeColumnCount: 4,
+        headerRowHeight: 42,
+        bodyRowHeight: 34,
+        columnWidths: [180, 150, 40, 280],
+        leftAlignColumns: [0, 3],
+        rightAlignColumns: [1],
+        columnBackgrounds: [
+          { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+          { columns: [1], color: { red: 1, green: 0.96, blue: 0.9 } },
+          { columns: [3], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+        ],
+        customNumberFormats: [
+          { startRowIndex: 1, endRowIndex: 2, columnIndex: 1, type: "CURRENCY", pattern: "\"NT$\"#,##0" },
+          { startRowIndex: 2, endRowIndex: 3, columnIndex: 1, type: "NUMBER", pattern: "0.0" },
+          { startRowIndex: 3, endRowIndex: 4, columnIndex: 1, type: "PERCENT", pattern: "0.0%" },
+          { startRowIndex: 4, endRowIndex: 6, columnIndex: 1, type: "CURRENCY", pattern: "\"NT$\"#,##0" },
+          { startRowIndex: 6, endRowIndex: 7, columnIndex: 1, type: "NUMBER", pattern: "0" },
+        ],
+      },
   ]);
   await applySheetDropdowns();
   await applySheetCharts(itemEntries.length, stayAnalysisEntries.length);
