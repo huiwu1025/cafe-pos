@@ -150,6 +150,8 @@ type SalesDetailRow = {
   salesAmount: number;
   productCost: number;
   grossProfit: number;
+  discountAmount: number;
+  complimentaryAmount: number;
   customerType: string;
   note: string;
   sortDateTime: string;
@@ -299,9 +301,18 @@ function buildSalesDetailRows(
   productCosts: ProductCostItem[]
 ) {
   const productCostMap = new Map(
-    productCosts.map((item) => [normalizeProductName(item.name), item])
-  );
+      productCosts.map((item) => [normalizeProductName(item.name), item])
+    );
   const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+  const complimentaryTotalsBySession = new Map<string, number>();
+
+  for (const item of orderItems) {
+    if (!item.is_complimentary) continue;
+    complimentaryTotalsBySession.set(
+      item.session_id,
+      (complimentaryTotalsBySession.get(item.session_id) ?? 0) + Number(item.line_total ?? 0)
+    );
+  }
 
   const liveRows = orderItems.reduce<SalesDetailRow[]>((rows, item) => {
     const session = sessionMap.get(item.session_id);
@@ -327,6 +338,8 @@ function buildSalesDetailRows(
       salesAmount,
       productCost,
       grossProfit: salesAmount - productCost,
+      discountAmount: Number(session.discount_amount ?? 0),
+      complimentaryAmount: complimentaryTotalsBySession.get(session.id) ?? 0,
       customerType: session.customer_type ?? "",
       note: session.customer_label ?? session.session_number,
       sortDateTime: session.created_at ?? session.session_number,
@@ -356,10 +369,12 @@ function buildSalesDetailRows(
       unitPrice,
       unitCost,
       salesAmount,
-        productCost,
-        grossProfit: salesAmount - productCost,
-        customerType: "",
-        note: item.notes ?? "",
+      productCost,
+      grossProfit: salesAmount - productCost,
+      discountAmount: 0,
+      complimentaryAmount: 0,
+      customerType: "",
+      note: item.notes ?? "",
         sortDateTime: item.business_date,
         orderGroup: item.notes ?? item.product_name,
         sourceType: "manual",
@@ -1913,12 +1928,14 @@ export async function syncTodayDashboardToGoogleSheets() {
         "銷售數量",
         "售價",
         "單位成本",
-      "商品營業額",
-      "商品成本",
-      "毛利",
-      "客群類型",
-      "備註",
-    ],
+        "商品營業額",
+        "商品成本",
+        "毛利",
+        "折扣金額",
+        "招待金額",
+        "客群類型",
+        "備註",
+      ],
       ...salesDetailRows.map((row, index) => {
         const previous = salesDetailRows[index - 1];
         const sameGroup =
@@ -1935,13 +1952,15 @@ export async function syncTodayDashboardToGoogleSheets() {
           row.category,
           row.quantity,
           row.unitPrice,
-          row.unitCost,
-          row.salesAmount,
-          row.productCost,
-          row.grossProfit,
-          row.customerType,
-          row.note,
-        ];
+            row.unitCost,
+            row.salesAmount,
+            row.productCost,
+            row.grossProfit,
+            sameGroup ? "" : row.discountAmount,
+            sameGroup ? "" : row.complimentaryAmount,
+            row.customerType,
+            row.note,
+          ];
       }),
     ]);
 
@@ -2412,19 +2431,20 @@ export async function syncTodayDashboardToGoogleSheets() {
         frozenRows: 1,
         headerRowIndex: 0,
         dateColumns: [0],
-        currencyColumns: [6, 7, 8, 9, 10],
-        autoResizeColumnCount: 13,
+        currencyColumns: [6, 7, 8, 9, 10, 11, 12],
+        autoResizeColumnCount: 15,
         headerRowHeight: 42,
         bodyRowHeight: 34,
-        columnWidths: [145, 125, 180, 220, 140, 110, 125, 125, 145, 145, 145, 140, 260],
-        leftAlignColumns: [2, 3, 4, 12],
-        centerAlignColumns: [0, 1, 5, 11],
-        rightAlignColumns: [6, 7, 8, 9, 10],
+        columnWidths: [145, 125, 180, 220, 140, 110, 125, 125, 145, 145, 145, 135, 135, 140, 260],
+        leftAlignColumns: [2, 3, 4, 14],
+        centerAlignColumns: [0, 1, 5, 13],
+        rightAlignColumns: [6, 7, 8, 9, 10, 11, 12],
         columnBackgrounds: [
           { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
-          { columns: [2, 3, 4, 11], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+          { columns: [2, 3, 4, 13], color: { red: 0.95, green: 0.97, blue: 0.93 } },
           { columns: [6, 7, 8, 9, 10], color: { red: 1, green: 0.96, blue: 0.9 } },
-          { columns: [5, 12], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+          { columns: [11, 12], color: { red: 1, green: 0.92, blue: 0.92 } },
+          { columns: [5, 14], color: { red: 0.97, green: 0.97, blue: 0.97 } },
         ],
       },
     {
