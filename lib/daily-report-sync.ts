@@ -2431,7 +2431,7 @@ export async function syncTodayDashboardToGoogleSheets() {
         frozenRows: 1,
         headerRowIndex: 0,
         dateColumns: [0],
-        currencyColumns: [6, 7, 8, 9, 10, 11, 12],
+        currencyColumns: [7, 8, 9, 10, 11, 12],
         autoResizeColumnCount: 15,
         headerRowHeight: 42,
         bodyRowHeight: 34,
