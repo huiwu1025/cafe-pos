@@ -588,8 +588,13 @@ async function loadFixedExpenses(sourceSpreadsheetId: string) {
   return items;
 }
 
-async function loadProcurements(sourceSpreadsheetId: string) {
-  const rows = await readSheetValues(SOURCE_PROCUREMENT_SHEET, sourceSpreadsheetId);
+async function loadProcurements(sourceSpreadsheetId?: string) {
+  const rowsFromReport = await readSheetValues("進貨耗材");
+  const rowsFromSource =
+    rowsFromReport.length === 0 && sourceSpreadsheetId
+      ? await readSheetValues(SOURCE_PROCUREMENT_SHEET, sourceSpreadsheetId)
+      : [];
+  const rows = rowsFromReport.length > 0 ? rowsFromReport : rowsFromSource;
   const headerIndex = findHeaderRowIndex(rows, ["日期", "月份", "品項", "類型", "總金額"]);
   const items: ProcurementRow[] = [];
 
@@ -1439,7 +1444,7 @@ export async function syncTodayDashboardToGoogleSheets() {
   const productCostLoadResult = await loadProductCosts(sourceSpreadsheetId || undefined);
   const productCosts = productCostLoadResult.items;
   const fixedExpenses = sourceSpreadsheetId ? await loadFixedExpenses(sourceSpreadsheetId) : [];
-  const procurements = sourceSpreadsheetId ? await loadProcurements(sourceSpreadsheetId) : [];
+  const procurements = await loadProcurements(sourceSpreadsheetId || undefined);
 
   const sessions = allSessions.filter(
     (session) => formatBusinessDate(session.created_at ?? "") === businessDate
@@ -1921,17 +1926,20 @@ export async function syncTodayDashboardToGoogleSheets() {
 
   await replaceSheetValues("進貨耗材", [
     ["日期", "月份", "品項", "類型", "單價", "數量", "總金額", "供應商", "備註"],
-    ...procurements.map((item) => [
-      item.date,
-      item.month,
-      item.item,
-      item.type,
-      item.unitPrice,
-      item.quantity,
-      item.totalAmount,
-      item.supplier,
-      item.note,
-    ]),
+    ...procurements.map((item, index) => {
+      const row = index + 2;
+      return [
+        item.date,
+        `=IF(A${row}="","",TEXT(A${row},"yyyy-mm"))`,
+        item.item,
+        item.type,
+        item.unitPrice,
+        item.quantity,
+        `=IF(OR(E${row}="",F${row}=""),"",E${row}*F${row})`,
+        item.supplier,
+        item.note,
+      ];
+    }),
   ]);
 
   const overviewRows = sortedDailyMetrics.map((item, index) => {
