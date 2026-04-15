@@ -2263,16 +2263,24 @@ export async function syncTodayDashboardToGoogleSheets() {
     ["累積商品營業額", `=SUM(月總表!C9:C20)`],
     ["累積實收金額", `=SUM(月總表!I9:I20)`],
     ["累積商品成本", `=SUM(月總表!J9:J20)`],
-    ["累積進貨耗材", `=SUM(月總表!K9:K20)`],
-    ["累積固定支出", `=SUM(月總表!L9:L20)`],
-    ["累積場租", `=SUM(月總表!M9:M20)`],
     ["累積手續費", `=SUM(每日總覽!Q:Q)`],
-    ["累積淨收入", `=SUM(月總表!N9:N20)`],
+    ["", ""],
+    ["成本區", ""],
+    ["人力成本", `=SUMIFS(固定支出!G:G,固定支出!D:D,"人力",固定支出!H:H,"是")`],
+    ["水電雜費", `=SUMIF(進貨耗材!D:D,"雜費",進貨耗材!H:H)`],
+    ["消耗品", `=SUMIF(進貨耗材!D:D,"包材",進貨耗材!H:H)`],
+    ["設備攤提", `=SUMIFS(固定支出!G:G,固定支出!D:D,"設備",固定支出!H:H,"是")`],
+    ["場租", `=SUM(月總表!M9:M20)`],
+    ["", ""],
+    ["最終計算", ""],
+    ["營業毛利", `=B3-B4-B5`],
+    ["營業費用", `=SUM(B8:B12)`],
+    ["最終淨利", `=B15-B16`],
     [],
     ["月份", "", "", "", "月份", "商品營業額", "實收金額", "總支出", "淨收入"],
     ...Array.from({ length: 12 }, (_, index) => {
       const sourceRow = index + 9;
-      const targetRow = index + 12;
+      const targetRow = index + 20;
       return [
         `=月總表!A${sourceRow}`,
         "",
@@ -2285,6 +2293,16 @@ export async function syncTodayDashboardToGoogleSheets() {
         `=月總表!N${sourceRow}`,
       ];
     }),
+  ]);
+
+  await replaceSheetValues("財務分析", [
+    ["分析項目", "數值", "", "說明"],
+    ["平均客單價", `=IF(SUM(每日總覽!C2:C)=0,0,ROUND(SUM(每日總覽!L2:L)/SUM(每日總覽!C2:C),0))`, "", "實收金額 ÷ 累積來客數"],
+    ["每日來客數", `=IF(COUNTA(每日總覽!A2:A)=0,0,ROUND(SUM(每日總覽!C2:C)/COUNTA(每日總覽!A2:A),1))`, "", "累積來客數 ÷ 有營業資料天數"],
+    ["營業毛利率", `=IF(財報!B3=0,0,財報!B15/財報!B3)`, "", "營業毛利 ÷ 累積實收金額"],
+    ["損益平衡營業額", `=IF(B4<=0,"",ROUNDUP(財報!B16/B4,0))`, "", "營業費用 ÷ 營業毛利率"],
+    ["平均每日淨利", `=IF(COUNTA(每日總覽!A2:A)=0,0,ROUND(財報!B17/COUNTA(每日總覽!A2:A),0))`, "", "最終淨利 ÷ 有營業資料天數"],
+    ["回本天數", `=IF(B6<=0,"",ROUNDUP(財報!B16/B6,0))`, "", "營業費用 ÷ 平均每日淨利"],
   ]);
 
   await applySheetStyles([
@@ -2560,6 +2578,27 @@ export async function syncTodayDashboardToGoogleSheets() {
       columnBackgrounds: [
         { columns: [0, 4], color: { red: 0.92, green: 0.96, blue: 0.99 } },
         { columns: [1, 5, 6, 7, 8], color: { red: 1, green: 0.96, blue: 0.9 } },
+      ],
+      customRowHeights: [
+        { rowIndex: 6, pixelSize: 38 },
+        { rowIndex: 13, pixelSize: 38 },
+      ],
+    },
+    {
+      title: "財務分析",
+      frozenRows: 1,
+      headerRowIndex: 0,
+      currencyColumns: [1],
+      autoResizeColumnCount: 4,
+      headerRowHeight: 42,
+      bodyRowHeight: 34,
+      columnWidths: [180, 150, 40, 280],
+      leftAlignColumns: [0, 3],
+      rightAlignColumns: [1],
+      columnBackgrounds: [
+        { columns: [0], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+        { columns: [1], color: { red: 1, green: 0.96, blue: 0.9 } },
+        { columns: [3], color: { red: 0.97, green: 0.97, blue: 0.97 } },
       ],
     },
   ]);
