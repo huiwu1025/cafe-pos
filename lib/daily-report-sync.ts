@@ -141,6 +141,7 @@ type ItemProfitSummary = {
 type SalesDetailRow = {
   businessDate: string;
   month: string;
+  sessionNumber: string;
   productName: string;
   category: string;
   quantity: number;
@@ -317,6 +318,7 @@ function buildSalesDetailRows(
     rows.push({
       businessDate: formatBusinessDate(session.created_at ?? ""),
       month: `'${formatBusinessDate(session.created_at ?? "").slice(0, 7)}`,
+      sessionNumber: session.session_number,
       productName: item.product_name,
       category: product?.category ?? "",
       quantity,
@@ -344,10 +346,11 @@ function buildSalesDetailRows(
     const unitCost = Number(product?.unitCost ?? 0);
     const productCost = quantity * unitCost;
 
-      return {
-        businessDate: item.business_date,
-        month: `'${item.business_date.slice(0, 7)}`,
-        productName: item.product_name,
+    return {
+      businessDate: item.business_date,
+      month: `'${item.business_date.slice(0, 7)}`,
+      sessionNumber: "歷史補登",
+      productName: item.product_name,
       category: product?.category ?? "",
       quantity,
       unitPrice,
@@ -1901,35 +1904,46 @@ export async function syncTodayDashboardToGoogleSheets() {
   ]);
 
   await replaceSheetValues("訂單明細", [
-    [
-      "日期",
-      "月份",
-      "品項",
-      "類別",
-      "銷售數量",
-      "售價",
-      "單位成本",
+      [
+        "日期",
+        "月份",
+        "主單編號",
+        "品項",
+        "類別",
+        "銷售數量",
+        "售價",
+        "單位成本",
       "商品營業額",
       "商品成本",
       "毛利",
       "客群類型",
       "備註",
     ],
-    ...salesDetailRows.map((row) => [
-      row.businessDate,
-      row.month,
-      row.productName,
-      row.category,
-      row.quantity,
-      row.unitPrice,
-      row.unitCost,
-      row.salesAmount,
-      row.productCost,
-      row.grossProfit,
-      row.customerType,
-      row.note,
-    ]),
-  ]);
+      ...salesDetailRows.map((row, index) => {
+        const previous = salesDetailRows[index - 1];
+        const sameGroup =
+          previous &&
+          previous.businessDate === row.businessDate &&
+          previous.sourceType === row.sourceType &&
+          previous.orderGroup === row.orderGroup;
+
+        return [
+          row.businessDate,
+          row.month,
+          sameGroup ? "" : row.sessionNumber,
+          row.productName,
+          row.category,
+          row.quantity,
+          row.unitPrice,
+          row.unitCost,
+          row.salesAmount,
+          row.productCost,
+          row.grossProfit,
+          row.customerType,
+          row.note,
+        ];
+      }),
+    ]);
 
   const stayAnalysisMap = new Map<
     string,
@@ -2205,7 +2219,7 @@ export async function syncTodayDashboardToGoogleSheets() {
       item.complimentary,
       item.refund,
       `=D${row}+G${row}+H${row}-I${row}-J${row}-K${row}`,
-      `=SUMIF(訂單明細!A:A,A${row},訂單明細!I:I)`,
+        `=SUMIF(訂單明細!A:A,A${row},訂單明細!J:J)`,
       `=D${row}-M${row}`,
       item.reconciliationDiff,
       `=ROUND(N${row}*0.2,0)`,
@@ -2394,25 +2408,25 @@ export async function syncTodayDashboardToGoogleSheets() {
       ],
     },
     {
-      title: "訂單明細",
-      frozenRows: 1,
-      headerRowIndex: 0,
-      dateColumns: [0],
-      currencyColumns: [5, 6, 7, 8, 9],
-      autoResizeColumnCount: 12,
-      headerRowHeight: 42,
-      bodyRowHeight: 34,
-      columnWidths: [145, 125, 220, 140, 110, 125, 125, 145, 145, 145, 140, 260],
-      leftAlignColumns: [2, 3, 11],
-      centerAlignColumns: [0, 1, 4, 10],
-      rightAlignColumns: [5, 6, 7, 8, 9],
-      columnBackgrounds: [
-        { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
-        { columns: [2, 3, 10], color: { red: 0.95, green: 0.97, blue: 0.93 } },
-        { columns: [5, 6, 7, 8, 9], color: { red: 1, green: 0.96, blue: 0.9 } },
-        { columns: [4, 11], color: { red: 0.97, green: 0.97, blue: 0.97 } },
-      ],
-    },
+        title: "訂單明細",
+        frozenRows: 1,
+        headerRowIndex: 0,
+        dateColumns: [0],
+        currencyColumns: [6, 7, 8, 9, 10],
+        autoResizeColumnCount: 13,
+        headerRowHeight: 42,
+        bodyRowHeight: 34,
+        columnWidths: [145, 125, 180, 220, 140, 110, 125, 125, 145, 145, 145, 140, 260],
+        leftAlignColumns: [2, 3, 4, 12],
+        centerAlignColumns: [0, 1, 5, 11],
+        rightAlignColumns: [6, 7, 8, 9, 10],
+        columnBackgrounds: [
+          { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+          { columns: [2, 3, 4, 11], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+          { columns: [6, 7, 8, 9, 10], color: { red: 1, green: 0.96, blue: 0.9 } },
+          { columns: [5, 12], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+        ],
+      },
     {
       title: "品項成本表",
       frozenRows: 1,
