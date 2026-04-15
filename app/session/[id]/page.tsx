@@ -43,6 +43,7 @@ type OrderItem = {
   custom_note: string | null;
   status: string;
   is_complimentary?: boolean | null;
+  is_served?: boolean | null;
 };
 
 type SeatRow = {
@@ -432,18 +433,19 @@ export default function SessionPage() {
       setIsAdding(true);
       const surchargeProduct = await ensureManualSurchargeProduct();
 
-      const { error } = await supabase.from("order_items").insert({
-        session_id: sessionId,
-        product_id: surchargeProduct.id,
-        product_name: "補價差",
+        const { error } = await supabase.from("order_items").insert({
+          session_id: sessionId,
+          product_id: surchargeProduct.id,
+          product_name: "補價差",
         unit_price: amount,
         quantity: 1,
         line_total: amount,
         note: "手動補價差",
-        custom_note: manualSurchargeReason.trim(),
-        status: "active",
-        is_complimentary: false,
-      });
+          custom_note: manualSurchargeReason.trim(),
+          status: "active",
+          is_complimentary: false,
+          is_served: false,
+        });
 
       if (error) throw error;
 
@@ -502,6 +504,7 @@ export default function SessionPage() {
           custom_note: "",
           status: "active",
           is_complimentary: false,
+          is_served: false,
         });
 
         if (error) throw error;
@@ -841,6 +844,28 @@ export default function SessionPage() {
       alert("刪除訂單失敗");
     } finally {
       setIsDeletingSession(false);
+    }
+  }
+
+  async function toggleServed(item: OrderItem) {
+    if (isLocked) return;
+
+    try {
+      const nextValue = !item.is_served;
+
+      const { error } = await supabase
+        .from("order_items")
+        .update({
+          is_served: nextValue,
+        })
+        .eq("id", item.id);
+
+      if (error) throw error;
+
+      await loadOrderItems();
+    } catch (error) {
+      console.error("切換出餐狀態失敗：", error);
+      alert("更新出餐狀態失敗");
     }
   }
 
@@ -1374,6 +1399,7 @@ export default function SessionPage() {
                   ) : (
                     orderItems.map((item) => {
                       const isComplimentary = Boolean(item.is_complimentary);
+                      const isServed = Boolean(item.is_served);
                       const displayLineTotal = isComplimentary ? 0 : Number(item.line_total);
 
                       return (
@@ -1382,15 +1408,40 @@ export default function SessionPage() {
                           className={`rounded-3xl border p-4 shadow-sm ${
                             isComplimentary
                               ? "border-amber-300 bg-amber-50"
+                              : isServed
+                                ? "border-emerald-300 bg-emerald-50"
                               : "border-gray-200 bg-white"
                           }`}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-start gap-2">
-                                <p className="break-words text-2xl font-bold leading-snug text-gray-900">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleServed(item)}
+                                  disabled={isLocked}
+                                  className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border-2 text-sm font-bold transition disabled:opacity-60 ${
+                                    isServed
+                                      ? "border-emerald-500 bg-emerald-500 text-white"
+                                      : "border-slate-300 bg-white text-transparent hover:border-emerald-400"
+                                  }`}
+                                  aria-label={isServed ? "取消已出餐" : "標記已出餐"}
+                                  title={isServed ? "取消已出餐" : "標記已出餐"}
+                                >
+                                  ✓
+                                </button>
+                                <p
+                                  className={`break-words text-2xl font-bold leading-snug ${
+                                    isServed ? "text-emerald-800 line-through decoration-2" : "text-gray-900"
+                                  }`}
+                                >
                                   {item.product_name}
                                 </p>
+                                {isServed && (
+                                  <span className="rounded-full bg-emerald-200 px-3 py-1 text-xs font-bold text-emerald-900">
+                                    已出餐
+                                  </span>
+                                )}
                                 {isComplimentary && (
                                   <span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-bold text-amber-900">
                                     招待
