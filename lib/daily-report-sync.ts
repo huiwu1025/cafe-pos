@@ -1797,7 +1797,7 @@ export async function syncTodayDashboardToGoogleSheets() {
   const stayAnalysisEntries = Array.from(stayAnalysisMap.entries());
   const stayChartFormula =
     stayAnalysisEntries.length > 0
-      ? `=SPARKLINE(I2:I${stayAnalysisEntries.length + 1},{"charttype","pie";"color1","#2563eb";"color2","#16a34a";"color3","#f59e0b";"color4","#ef4444";"color5","#8b5cf6"})`
+      ? `=SPARKLINE(I2:I${stayAnalysisEntries.length + 1},{"charttype","pie"})`
       : "";
 
   await replaceSheetValues("客群停留分析", [
