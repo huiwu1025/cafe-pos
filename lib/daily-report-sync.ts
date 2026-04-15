@@ -151,6 +151,9 @@ type SalesDetailRow = {
   grossProfit: number;
   customerType: string;
   note: string;
+  sortDateTime: string;
+  orderGroup: string;
+  sourceType: "live" | "manual";
 };
 
 type DailyMetric = {
@@ -299,35 +302,38 @@ function buildSalesDetailRows(
   );
   const sessionMap = new Map(sessions.map((session) => [session.id, session]));
 
-  const liveRows: SalesDetailRow[] = orderItems
-    .map((item) => {
-      const session = sessionMap.get(item.session_id);
-      if (!session) return null;
+  const liveRows = orderItems.reduce<SalesDetailRow[]>((rows, item) => {
+    const session = sessionMap.get(item.session_id);
+    if (!session) return rows;
 
-      const product = productCostMap.get(normalizeProductName(item.product_name));
-      const quantity = Number(item.quantity ?? 0);
-      const salesAmount = Number(item.line_total ?? 0);
-      const unitPrice =
-        quantity > 0 ? Math.round((salesAmount / quantity) * 100) / 100 : Number(product?.price ?? 0);
-      const unitCost = Number(product?.unitCost ?? 0);
-      const productCost = quantity * unitCost;
+    const product = productCostMap.get(normalizeProductName(item.product_name));
+    const quantity = Number(item.quantity ?? 0);
+    const salesAmount = Number(item.line_total ?? 0);
+    const unitPrice =
+      quantity > 0 ? Math.round((salesAmount / quantity) * 100) / 100 : Number(product?.price ?? 0);
+    const unitCost = Number(product?.unitCost ?? 0);
+    const productCost = quantity * unitCost;
 
-      return {
-        businessDate: formatBusinessDate(session.created_at ?? ""),
-        month: `'${formatBusinessDate(session.created_at ?? "").slice(0, 7)}`,
-        productName: item.product_name,
-        category: product?.category ?? "",
-        quantity,
-        unitPrice,
-        unitCost,
-        salesAmount,
-        productCost,
-        grossProfit: salesAmount - productCost,
-        customerType: session.customer_type ?? "",
-        note: session.customer_label ?? session.session_number,
-      } satisfies SalesDetailRow;
-    })
-    .filter((row): row is SalesDetailRow => Boolean(row));
+    rows.push({
+      businessDate: formatBusinessDate(session.created_at ?? ""),
+      month: `'${formatBusinessDate(session.created_at ?? "").slice(0, 7)}`,
+      productName: item.product_name,
+      category: product?.category ?? "",
+      quantity,
+      unitPrice,
+      unitCost,
+      salesAmount,
+      productCost,
+      grossProfit: salesAmount - productCost,
+      customerType: session.customer_type ?? "",
+      note: session.customer_label ?? session.session_number,
+      sortDateTime: session.created_at ?? session.session_number,
+      orderGroup: session.session_number,
+      sourceType: "live",
+    });
+
+    return rows;
+  }, []);
 
   const manualRows: SalesDetailRow[] = manualProductSales.map((item) => {
     const product = productCostMap.get(normalizeProductName(item.product_name));
@@ -338,28 +344,37 @@ function buildSalesDetailRows(
     const unitCost = Number(product?.unitCost ?? 0);
     const productCost = quantity * unitCost;
 
-    return {
-      businessDate: item.business_date,
-      month: `'${item.business_date.slice(0, 7)}`,
-      productName: item.product_name,
+      return {
+        businessDate: item.business_date,
+        month: `'${item.business_date.slice(0, 7)}`,
+        productName: item.product_name,
       category: product?.category ?? "",
       quantity,
       unitPrice,
       unitCost,
       salesAmount,
-      productCost,
-      grossProfit: salesAmount - productCost,
-      customerType: "",
-      note: item.notes ?? "",
-    };
-  });
+        productCost,
+        grossProfit: salesAmount - productCost,
+        customerType: "",
+        note: item.notes ?? "",
+        sortDateTime: item.business_date,
+        orderGroup: item.notes ?? item.product_name,
+        sourceType: "manual",
+      };
+    });
 
-  return [...liveRows, ...manualRows].sort((a, b) => {
-    const dateCompare = a.businessDate.localeCompare(b.businessDate);
-    if (dateCompare !== 0) return dateCompare;
-    return a.productName.localeCompare(b.productName, "zh-Hant");
-  });
-}
+    return [...liveRows, ...manualRows].sort((a, b) => {
+      const dateCompare = a.businessDate.localeCompare(b.businessDate);
+      if (dateCompare !== 0) return dateCompare;
+      const sourceCompare = a.sourceType.localeCompare(b.sourceType);
+      if (sourceCompare !== 0) return sourceCompare;
+      const timeCompare = a.sortDateTime.localeCompare(b.sortDateTime);
+      if (timeCompare !== 0) return timeCompare;
+      const groupCompare = a.orderGroup.localeCompare(b.orderGroup, "zh-Hant");
+      if (groupCompare !== 0) return groupCompare;
+      return a.productName.localeCompare(b.productName, "zh-Hant");
+    });
+  }
 
 function columnToLetter(columnNumber: number) {
   let current = columnNumber;
