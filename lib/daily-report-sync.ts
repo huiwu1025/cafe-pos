@@ -2333,6 +2333,7 @@ export async function syncTodayDashboardToGoogleSheets() {
     ["損益平衡營業額", `=IF(B4<=0,"",ROUNDUP(財報!B16/B4,0))`, "", "營業費用 ÷ 營業毛利率"],
     ["平均每日淨利", `=IF(COUNTA(每日總覽!A2:A)=0,0,ROUND(財報!B17/COUNTA(每日總覽!A2:A),0))`, "", "最終淨利 ÷ 有營業資料天數"],
     ["回本天數", `=IF(B6<=0,"",ROUNDUP(財報!B16/B6,0))`, "", "營業費用 ÷ 平均每日淨利"],
+    ["設備攤提回收天數", `=IF(B6<=0,"",ROUNDUP(財報!B11/B6,0))`, "", "設備攤提 ÷ 平均每日淨利"],
   ]);
 
   await applySheetStyles([
@@ -2634,7 +2635,7 @@ export async function syncTodayDashboardToGoogleSheets() {
           { startRowIndex: 2, endRowIndex: 3, columnIndex: 1, type: "NUMBER", pattern: "0.0" },
           { startRowIndex: 3, endRowIndex: 4, columnIndex: 1, type: "PERCENT", pattern: "0.0%" },
           { startRowIndex: 4, endRowIndex: 6, columnIndex: 1, type: "CURRENCY", pattern: "\"NT$\"#,##0" },
-          { startRowIndex: 6, endRowIndex: 7, columnIndex: 1, type: "NUMBER", pattern: "0" },
+          { startRowIndex: 6, endRowIndex: 8, columnIndex: 1, type: "NUMBER", pattern: "0" },
         ],
       },
   ]);
