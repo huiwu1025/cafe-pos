@@ -19,6 +19,7 @@ type SessionData = {
   tip_amount?: number | null;
   amount_received?: number | null;
   change_amount?: number | null;
+  created_at?: string | null;
   paid_at?: string | null;
 };
 
@@ -29,6 +30,12 @@ type Product = {
   price: number;
   is_active: boolean;
   sort_order: number;
+};
+
+type ProductPriceHistoryRow = {
+  product_id: string;
+  price: number;
+  effective_from: string;
 };
 
 type OrderItem = {
@@ -84,6 +91,9 @@ const TEMP_OPTIONS = ["冰", "涼", "熱"];
 const SUGAR_OPTIONS = ["兩倍糖", "正常", "少糖", "無糖"];
 const PAYMENT_METHOD_OPTIONS = ["現金", "歐付寶", "其他"];
 const EMPLOYEE_DISCOUNT_RATE = 0.2;
+const MIN_CHECKOUT_RULE_START = "2026-04-18";
+const MIN_CHECKOUT_AMOUNT = 100;
+const STAY_NOTICE_MINUTES = 120;
 
 function todayIsoDate() {
   const now = new Date();
@@ -116,6 +126,18 @@ function appendTransferNote(existingLabel: string | null | undefined, fromSeats:
   const transferNote = `轉桌 ${formatSeatLabel(fromSeats)} → ${formatSeatLabel(toSeats)} ${timestamp}`;
   if (!base) return transferNote;
   return `${base} / ${transferNote}`;
+}
+
+function formatDateToTaipeiIso(value: string | Date | null | undefined) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
 export default function SessionPage() {
@@ -200,7 +222,39 @@ export default function SessionPage() {
       .order("sort_order", { ascending: true });
 
     if (error) throw error;
-    setProducts(data ?? []);
+
+    const baseProducts = (data ?? []) as Product[];
+    if (baseProducts.length === 0) {
+      setProducts([]);
+      return;
+    }
+
+    const productIds = baseProducts.map((product) => product.id);
+    const businessDate = todayIsoDate();
+    const { data: priceHistoryData, error: priceHistoryError } = await supabase
+      .from("product_price_history")
+      .select("product_id, price, effective_from")
+      .in("product_id", productIds)
+      .lte("effective_from", businessDate)
+      .order("effective_from", { ascending: false });
+
+    if (priceHistoryError && !priceHistoryError.message?.includes("product_price_history")) {
+      throw priceHistoryError;
+    }
+
+    const effectivePriceMap = new Map<string, number>();
+    for (const row of ((priceHistoryData ?? []) as ProductPriceHistoryRow[])) {
+      if (!effectivePriceMap.has(row.product_id)) {
+        effectivePriceMap.set(row.product_id, Number(row.price ?? 0));
+      }
+    }
+
+    setProducts(
+      baseProducts.map((product) => ({
+        ...product,
+        price: effectivePriceMap.get(product.id) ?? Number(product.price ?? 0),
+      }))
+    );
   }, []);
 
   const loadOrderItems = useCallback(async () => {
@@ -352,6 +406,33 @@ export default function SessionPage() {
   const changeAmount = useMemo(() => {
     return Math.max(amountReceived - finalTotal, 0);
   }, [amountReceived, finalTotal]);
+
+  const sessionBusinessDate = useMemo(() => {
+    return formatDateToTaipeiIso(session?.created_at ?? null) || todayIsoDate();
+  }, [session?.created_at]);
+
+  const isMinimumSpendRuleActive = useMemo(() => {
+    return sessionBusinessDate >= MIN_CHECKOUT_RULE_START;
+  }, [sessionBusinessDate]);
+
+  const minimumSpendShortfall = useMemo(() => {
+    if (!isMinimumSpendRuleActive) return 0;
+    return Math.max(MIN_CHECKOUT_AMOUNT - finalTotal, 0);
+  }, [finalTotal, isMinimumSpendRuleActive]);
+
+  const sessionAgeMinutes = useMemo(() => {
+    if (!session?.created_at) return 0;
+    const createdAt = new Date(session.created_at);
+    if (Number.isNaN(createdAt.getTime())) return 0;
+    const endAt =
+      session.payment_status === "paid" && session.paid_at ? new Date(session.paid_at) : new Date();
+    if (Number.isNaN(endAt.getTime())) return 0;
+    return Math.max(0, Math.round((endAt.getTime() - createdAt.getTime()) / 60000));
+  }, [session?.created_at, session?.paid_at, session?.payment_status]);
+
+  const shouldShowStayNotice = useMemo(() => {
+    return session?.payment_status !== "paid" && sessionAgeMinutes >= STAY_NOTICE_MINUTES;
+  }, [session?.payment_status, sessionAgeMinutes]);
 
   const remainingAmount = useMemo(() => {
     return Math.max(finalTotal - amountReceived, 0);
@@ -754,6 +835,11 @@ export default function SessionPage() {
       return;
     }
 
+    if (minimumSpendShortfall > 0) {
+      alert(`本單未達低消 ${MIN_CHECKOUT_AMOUNT} 元，還差 ${minimumSpendShortfall} 元`);
+      return;
+    }
+
     if (amountReceived < finalTotal) {
       alert("實收金額不足，無法結帳");
       return;
@@ -767,6 +853,11 @@ export default function SessionPage() {
 
     if (orderItems.length === 0) {
       alert("目前沒有任何商品，無法結帳");
+      return;
+    }
+
+    if (minimumSpendShortfall > 0) {
+      alert(`本單未達低消 ${MIN_CHECKOUT_AMOUNT} 元，還差 ${minimumSpendShortfall} 元`);
       return;
     }
 
@@ -1144,13 +1235,28 @@ export default function SessionPage() {
                       <p className="text-sm text-gray-500">付款狀態</p>
                       <p className="mt-1 text-lg font-bold text-gray-900">
                         {session.payment_status}
-                      </p>
+                        </p>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="rounded-2xl border border-gray-200 p-4">
-                    <div className="mb-3">
-                      <p className="text-sm font-medium text-gray-600">快速規格</p>
+                    {(shouldShowStayNotice || isMinimumSpendRuleActive) && (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+                        {shouldShowStayNotice && (
+                          <p className="font-semibold text-amber-900">
+                            本單已超過 2 小時，目前停留約 {sessionAgeMinutes} 分鐘
+                          </p>
+                        )}
+                        {isMinimumSpendRuleActive && (
+                          <p className={shouldShowStayNotice ? "mt-1 text-amber-800" : "font-semibold text-amber-900"}>
+                            4/18 起每單低消 {MIN_CHECKOUT_AMOUNT} 元，可用小費補足
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="rounded-2xl border border-gray-200 p-4">
+                      <div className="mb-3">
+                        <p className="text-sm font-medium text-gray-600">快速規格</p>
                     </div>
 
                     <div className="space-y-4">
@@ -1594,26 +1700,31 @@ export default function SessionPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-end justify-between">
-                    <div className="space-y-1">
-                      <div className="text-base font-bold text-gray-900">
-                        總計 ${finalTotal}
-                      </div>
-                      {remainingAmount > 0 && (
-                        <div className="text-sm font-semibold text-red-600">
-                          尚差 ${remainingAmount}
+                    <div className="flex items-end justify-between">
+                      <div className="space-y-1">
+                        <div className="text-base font-bold text-gray-900">
+                          總計 ${finalTotal}
                         </div>
-                      )}
+                        {minimumSpendShortfall > 0 && (
+                          <div className="text-sm font-semibold text-rose-600">
+                            未達低消 ${MIN_CHECKOUT_AMOUNT}，還差 ${minimumSpendShortfall}
+                          </div>
+                        )}
+                        {remainingAmount > 0 && (
+                          <div className="text-sm font-semibold text-red-600">
+                            尚差 ${remainingAmount}
+                          </div>
+                        )}
                     </div>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={openCheckoutModal}
-                  disabled={isPaying || isLocked}
-                  className="mt-3 min-h-[56px] w-full rounded-3xl bg-emerald-500 px-4 text-xl font-bold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
-                >
+                  <button
+                    type="button"
+                    onClick={openCheckoutModal}
+                    disabled={isPaying || isLocked || minimumSpendShortfall > 0}
+                    className="mt-3 min-h-[56px] w-full rounded-3xl bg-emerald-500 px-4 text-xl font-bold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
                   {isLocked ? "已結帳" : isPaying ? "結帳中..." : "結帳確認"}
                 </button>
               </div>
@@ -1655,11 +1766,16 @@ export default function SessionPage() {
                 <span>找零</span>
                 <span>${changeAmount}</span>
               </div>
-              <div className="flex justify-between border-t pt-3 text-xl font-bold text-gray-900">
-                <span>總計</span>
-                <span>${finalTotal}</span>
+                <div className="flex justify-between border-t pt-3 text-xl font-bold text-gray-900">
+                  <span>總計</span>
+                  <span>${finalTotal}</span>
+                </div>
+                {minimumSpendShortfall > 0 && (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+                    本單未達低消 ${MIN_CHECKOUT_AMOUNT}，還差 ${minimumSpendShortfall}
+                  </div>
+                )}
               </div>
-            </div>
 
             <div className="mt-6 grid grid-cols-2 gap-3">
               <button
@@ -1669,12 +1785,12 @@ export default function SessionPage() {
               >
                 取消
               </button>
-              <button
-                type="button"
-                onClick={confirmCheckout}
-                disabled={isPaying}
-                className="min-h-[54px] rounded-2xl bg-emerald-500 px-4 text-base font-semibold text-white hover:bg-emerald-600 disabled:opacity-60"
-              >
+                <button
+                  type="button"
+                  onClick={confirmCheckout}
+                  disabled={isPaying || minimumSpendShortfall > 0}
+                  className="min-h-[54px] rounded-2xl bg-emerald-500 px-4 text-base font-semibold text-white hover:bg-emerald-600 disabled:opacity-60"
+                >
                 {isPaying ? "結帳中..." : "確認結帳"}
               </button>
             </div>
