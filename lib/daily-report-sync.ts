@@ -90,6 +90,15 @@ type ManualSessionDetailRow = {
   stay_minutes?: number | null;
 };
 
+type ProductPriceHistoryRow = {
+  effective_from: string;
+  price: number;
+  note?: string | null;
+  product?: {
+    name?: string | null;
+  } | null;
+};
+
 type ProductCostItem = {
   name: string;
   category: string;
@@ -600,6 +609,37 @@ async function loadProductCosts(sourceSpreadsheetId?: string) {
     reportRowCount: rowsFromReport.length,
     sourceRowCount: rowsFromSource.length,
   };
+}
+
+async function loadProductPriceHistory(supabase: ReturnType<typeof getSupabaseServerClient>) {
+  const { data, error } = await supabase
+    .from("product_price_history")
+    .select("effective_from, price, note, products(name)")
+    .order("effective_from", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    if (error.message?.includes("product_price_history")) {
+      return [] as Array<{
+        effectiveFrom: string;
+        productName: string;
+        price: number;
+        note: string;
+      }>;
+    }
+    throw error;
+  }
+
+  return ((data ?? []) as Array<
+    ProductPriceHistoryRow & { products?: { name?: string | null } | null }
+  >)
+    .map((row) => ({
+      effectiveFrom: row.effective_from,
+      productName: normalizeProductName(row.products?.name ?? row.product?.name ?? ""),
+      price: toNumber(row.price),
+      note: row.note ?? "",
+    }))
+    .filter((row) => row.productName);
 }
 
 async function loadFixedExpenses(sourceSpreadsheetId?: string) {
@@ -1697,6 +1737,7 @@ export async function syncTodayDashboardToGoogleSheets() {
   const availableSheets = sourceSpreadsheetId ? await listSheetTitles(sourceSpreadsheetId) : [];
   const productCostLoadResult = await loadProductCosts(sourceSpreadsheetId || undefined);
   const productCosts = productCostLoadResult.items;
+  const productPriceHistory = await loadProductPriceHistory(supabase);
   const fixedExpenses = await loadFixedExpenses(sourceSpreadsheetId || undefined);
   const procurements = await loadProcurements(sourceSpreadsheetId || undefined);
 
@@ -2219,6 +2260,21 @@ export async function syncTodayDashboardToGoogleSheets() {
         `=IF(AND(E${row}="",F${row}="",G${row}=""),"",E${row}*F${row}+G${row})`,
         item.supplier,
         item.note,
+        ];
+      }),
+    ]);
+
+  await replaceSheetValues("價格歷史", [
+    ["生效日", "品項名稱", "歷史售價", "目前單位成本", "參考毛利", "備註"],
+    ...productPriceHistory.map((item, index) => {
+      const row = index + 2;
+      return [
+        item.effectiveFrom,
+        item.productName,
+        item.price,
+        `=IFERROR(VLOOKUP(B${row},品項成本表!A:D,4,FALSE),"")`,
+        `=IF(OR(C${row}="",D${row}=""),"",C${row}-D${row})`,
+        item.note,
       ];
     }),
   ]);
@@ -2447,11 +2503,11 @@ export async function syncTodayDashboardToGoogleSheets() {
           { columns: [5, 14], color: { red: 0.97, green: 0.97, blue: 0.97 } },
         ],
       },
-    {
-      title: "品項成本表",
-      frozenRows: 1,
-      headerRowIndex: 0,
-      currencyColumns: [2, 3, 4],
+      {
+        title: "品項成本表",
+        frozenRows: 1,
+        headerRowIndex: 0,
+        currencyColumns: [2, 3, 4],
       percentColumns: [5],
       autoResizeColumnCount: 8,
       headerRowHeight: 42,
@@ -2460,17 +2516,36 @@ export async function syncTodayDashboardToGoogleSheets() {
       leftAlignColumns: [0, 1, 7],
       centerAlignColumns: [6],
       rightAlignColumns: [2, 3, 4, 5],
-      columnBackgrounds: [
-        { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
-        { columns: [2, 3, 4], color: { red: 1, green: 0.96, blue: 0.9 } },
-        { columns: [5], color: { red: 0.93, green: 0.95, blue: 1 } },
-        { columns: [6, 7], color: { red: 0.97, green: 0.97, blue: 0.97 } },
-      ],
-    },
-    {
-      title: "固定支出",
-      frozenRows: 1,
-      headerRowIndex: 0,
+        columnBackgrounds: [
+          { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+          { columns: [2, 3, 4], color: { red: 1, green: 0.96, blue: 0.9 } },
+          { columns: [5], color: { red: 0.93, green: 0.95, blue: 1 } },
+          { columns: [6, 7], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+        ],
+      },
+      {
+        title: "價格歷史",
+        frozenRows: 1,
+        headerRowIndex: 0,
+        dateColumns: [0],
+        currencyColumns: [2, 3, 4],
+        autoResizeColumnCount: 6,
+        headerRowHeight: 42,
+        bodyRowHeight: 34,
+        columnWidths: [135, 220, 130, 130, 130, 260],
+        leftAlignColumns: [1, 5],
+        centerAlignColumns: [0],
+        rightAlignColumns: [2, 3, 4],
+        columnBackgrounds: [
+          { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+          { columns: [2, 3, 4], color: { red: 1, green: 0.96, blue: 0.9 } },
+          { columns: [5], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+        ],
+      },
+      {
+        title: "固定支出",
+        frozenRows: 1,
+        headerRowIndex: 0,
       dateColumns: [0],
       currencyColumns: [4, 5, 6],
       autoResizeColumnCount: 9,
