@@ -91,7 +91,7 @@ const TEMP_OPTIONS = ["冰", "涼", "熱"];
 const SUGAR_OPTIONS = ["兩倍糖", "正常", "少糖", "無糖"];
 const PAYMENT_METHOD_OPTIONS = ["現金", "歐付寶", "其他"];
 const EMPLOYEE_DISCOUNT_RATE = 0.2;
-const MIN_CHECKOUT_RULE_START = "2026-04-18";
+const MIN_CHECKOUT_RULE_START = "2026-04-17";
 const MIN_CHECKOUT_AMOUNT = 100;
 const STAY_NOTICE_MINUTES = 120;
 

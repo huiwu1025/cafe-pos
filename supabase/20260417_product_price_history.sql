@@ -58,7 +58,7 @@ for delete
 using (true);
 
 insert into public.product_price_history (product_id, price, effective_from, note)
-select id, 160, date '2026-04-18', '2026-04-18 菜單調價'
+select id, 160, date '2026-04-17', '2026-04-17 菜單調價'
 from public.products
 where name = '蜂蜜鮮奶茶'
 on conflict (product_id, effective_from) do update
@@ -66,7 +66,7 @@ set price = excluded.price,
     note = excluded.note;
 
 insert into public.product_price_history (product_id, price, effective_from, note)
-select id, 160, date '2026-04-18', '2026-04-18 菜單調價'
+select id, 160, date '2026-04-17', '2026-04-17 菜單調價'
 from public.products
 where name = '黑糖鮮奶茶'
 on conflict (product_id, effective_from) do update
@@ -74,7 +74,7 @@ set price = excluded.price,
     note = excluded.note;
 
 insert into public.product_price_history (product_id, price, effective_from, note)
-select id, 140, date '2026-04-18', '2026-04-18 菜單調價'
+select id, 140, date '2026-04-17', '2026-04-17 菜單調價'
 from public.products
 where name = '焙茶牛奶'
 on conflict (product_id, effective_from) do update
@@ -82,7 +82,7 @@ set price = excluded.price,
     note = excluded.note;
 
 insert into public.product_price_history (product_id, price, effective_from, note)
-select id, 140, date '2026-04-18', '2026-04-18 菜單調價'
+select id, 140, date '2026-04-17', '2026-04-17 菜單調價'
 from public.products
 where name = '抹茶牛奶'
 on conflict (product_id, effective_from) do update
@@ -90,7 +90,7 @@ set price = excluded.price,
     note = excluded.note;
 
 insert into public.product_price_history (product_id, price, effective_from, note)
-select id, 120, date '2026-04-18', '2026-04-18 菜單調價'
+select id, 120, date '2026-04-17', '2026-04-17 菜單調價'
 from public.products
 where name = '鮮奶茶'
 on conflict (product_id, effective_from) do update
@@ -98,7 +98,7 @@ set price = excluded.price,
     note = excluded.note;
 
 insert into public.product_price_history (product_id, price, effective_from, note)
-select id, 120, date '2026-04-18', '2026-04-18 菜單調價'
+select id, 120, date '2026-04-17', '2026-04-17 菜單調價'
 from public.products
 where name = '手沖咖啡'
 on conflict (product_id, effective_from) do update
@@ -106,7 +106,7 @@ set price = excluded.price,
     note = excluded.note;
 
 insert into public.product_price_history (product_id, price, effective_from, note)
-select id, 140, date '2026-04-18', '2026-04-18 菜單調價'
+select id, 140, date '2026-04-17', '2026-04-17 菜單調價'
 from public.products
 where name = '日式咖啡歐蕾'
 on conflict (product_id, effective_from) do update
@@ -114,7 +114,7 @@ set price = excluded.price,
     note = excluded.note;
 
 insert into public.product_price_history (product_id, price, effective_from, note)
-select id, 60, date '2026-04-18', '2026-04-18 菜單調價'
+select id, 60, date '2026-04-17', '2026-04-17 菜單調價'
 from public.products
 where name = '紅茶'
 on conflict (product_id, effective_from) do update
@@ -122,7 +122,7 @@ set price = excluded.price,
     note = excluded.note;
 
 insert into public.product_price_history (product_id, price, effective_from, note)
-select id, 120, date '2026-04-18', '2026-04-18 菜單調價'
+select id, 120, date '2026-04-17', '2026-04-17 菜單調價'
 from public.products
 where name = '洋甘菊玫瑰'
 on conflict (product_id, effective_from) do update
@@ -130,7 +130,7 @@ set price = excluded.price,
     note = excluded.note;
 
 insert into public.product_price_history (product_id, price, effective_from, note)
-select id, 120, date '2026-04-18', '2026-04-18 菜單調價'
+select id, 120, date '2026-04-17', '2026-04-17 菜單調價'
 from public.products
 where name = '薄荷檸檬草'
 on conflict (product_id, effective_from) do update
@@ -138,7 +138,7 @@ set price = excluded.price,
     note = excluded.note;
 
 insert into public.product_price_history (product_id, price, effective_from, note)
-select id, 120, date '2026-04-18', '2026-04-18 菜單調價'
+select id, 120, date '2026-04-17', '2026-04-17 菜單調價'
 from public.products
 where name = '薰衣草花茶'
 on conflict (product_id, effective_from) do update
