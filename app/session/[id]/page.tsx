@@ -51,6 +51,7 @@ type OrderItem = {
   status: string;
   is_complimentary?: boolean | null;
   is_served?: boolean | null;
+  created_at?: string | null;
 };
 
 type SeatRow = {
@@ -94,6 +95,12 @@ const EMPLOYEE_DISCOUNT_RATE = 0.2;
 const MIN_CHECKOUT_RULE_START = "2026-04-17";
 const MIN_CHECKOUT_AMOUNT = 100;
 const STAY_NOTICE_MINUTES = 120;
+
+function formatRuleStartLabel(date: string) {
+  const [year, month, day] = date.split("-");
+  if (!year || !month || !day) return date;
+  return `${Number(month)}/${Number(day)}`;
+}
 
 function todayIsoDate() {
   const now = new Date();
@@ -263,7 +270,7 @@ export default function SessionPage() {
       .select("*")
       .eq("session_id", sessionId)
       .eq("status", "active")
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: false });
 
     if (error) throw error;
     setOrderItems(data ?? []);
@@ -417,8 +424,13 @@ export default function SessionPage() {
 
   const minimumSpendShortfall = useMemo(() => {
     if (!isMinimumSpendRuleActive) return 0;
+    if (orderItems.length > 0 && orderItems.every((item) => Boolean(item.is_complimentary))) return 0;
     return Math.max(MIN_CHECKOUT_AMOUNT - finalTotal, 0);
-  }, [finalTotal, isMinimumSpendRuleActive]);
+  }, [finalTotal, isMinimumSpendRuleActive, orderItems]);
+
+  const isAllComplimentaryOrder = useMemo(() => {
+    return orderItems.length > 0 && orderItems.every((item) => Boolean(item.is_complimentary));
+  }, [orderItems]);
 
   const sessionAgeMinutes = useMemo(() => {
     if (!session?.created_at) return 0;
@@ -1246,13 +1258,16 @@ export default function SessionPage() {
                             本單已超過 2 小時，目前停留約 {sessionAgeMinutes} 分鐘
                           </p>
                         )}
-                        {isMinimumSpendRuleActive && (
-                          <p className={shouldShowStayNotice ? "mt-1 text-amber-800" : "font-semibold text-amber-900"}>
-                            4/18 起每單低消 {MIN_CHECKOUT_AMOUNT} 元，可用小費補足
-                          </p>
-                        )}
-                      </div>
-                    )}
+                          {isMinimumSpendRuleActive && (
+                            <p className={shouldShowStayNotice ? "mt-1 text-amber-800" : "font-semibold text-amber-900"}>
+                            {formatRuleStartLabel(MIN_CHECKOUT_RULE_START)} 起每單低消 {MIN_CHECKOUT_AMOUNT} 元，可用小費補足
+                            </p>
+                          )}
+                          {isAllComplimentaryOrder && (
+                            <p className="mt-1 text-amber-800">本單全招待，可直接結帳</p>
+                          )}
+                        </div>
+                      )}
 
                     <div className="rounded-2xl border border-gray-200 p-4">
                       <div className="mb-3">
@@ -1710,6 +1725,9 @@ export default function SessionPage() {
                             未達低消 ${MIN_CHECKOUT_AMOUNT}，還差 ${minimumSpendShortfall}
                           </div>
                         )}
+                        {isAllComplimentaryOrder && (
+                          <div className="text-sm font-semibold text-emerald-700">本單全招待，可直接結帳</div>
+                        )}
                         {remainingAmount > 0 && (
                           <div className="text-sm font-semibold text-red-600">
                             尚差 ${remainingAmount}
@@ -1770,12 +1788,17 @@ export default function SessionPage() {
                   <span>總計</span>
                   <span>${finalTotal}</span>
                 </div>
-                {minimumSpendShortfall > 0 && (
-                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
-                    本單未達低消 ${MIN_CHECKOUT_AMOUNT}，還差 ${minimumSpendShortfall}
-                  </div>
-                )}
-              </div>
+                  {minimumSpendShortfall > 0 && (
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+                      本單未達低消 ${MIN_CHECKOUT_AMOUNT}，還差 ${minimumSpendShortfall}
+                    </div>
+                  )}
+                  {isAllComplimentaryOrder && (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+                      本單所有品項皆為招待，可直接結帳。
+                    </div>
+                  )}
+                </div>
 
             <div className="mt-6 grid grid-cols-2 gap-3">
               <button
