@@ -96,12 +96,6 @@ const MIN_CHECKOUT_RULE_START = "2026-04-17";
 const MIN_CHECKOUT_AMOUNT = 100;
 const STAY_NOTICE_MINUTES = 120;
 
-function formatRuleStartLabel(date: string) {
-  const [year, month, day] = date.split("-");
-  if (!year || !month || !day) return date;
-  return `${Number(month)}/${Number(day)}`;
-}
-
 function todayIsoDate() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
@@ -1251,23 +1245,20 @@ export default function SessionPage() {
                       </div>
                     </div>
 
-                    {(shouldShowStayNotice || isMinimumSpendRuleActive) && (
-                      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+                    {(shouldShowStayNotice || isAllComplimentaryOrder) && (
+                      <div className="flex flex-wrap gap-2">
                         {shouldShowStayNotice && (
-                          <p className="font-semibold text-amber-900">
-                            本單已超過 2 小時，目前停留約 {sessionAgeMinutes} 分鐘
-                          </p>
+                          <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
+                            逾 2 小時
+                          </span>
                         )}
-                          {isMinimumSpendRuleActive && (
-                            <p className={shouldShowStayNotice ? "mt-1 text-amber-800" : "font-semibold text-amber-900"}>
-                            {formatRuleStartLabel(MIN_CHECKOUT_RULE_START)} 起每單低消 {MIN_CHECKOUT_AMOUNT} 元，可用小費補足
-                            </p>
-                          )}
-                          {isAllComplimentaryOrder && (
-                            <p className="mt-1 text-amber-800">本單全招待，可直接結帳</p>
-                          )}
-                        </div>
-                      )}
+                        {isAllComplimentaryOrder && (
+                          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+                            全招待
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     <div className="rounded-2xl border border-gray-200 p-4">
                       <div className="mb-3">
@@ -1435,12 +1426,11 @@ export default function SessionPage() {
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900">商品點餐</h2>
-                  <p className="mt-1 text-sm text-gray-500">固定卡片高度，不會因品名變形</p>
                 </div>
 
-                <div className="rounded-2xl bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
-                  點一下直接加入
-                </div>
+                    <div className="rounded-2xl bg-gray-50 px-4 py-2.5 text-sm text-gray-600">
+                      即點即加
+                    </div>
               </div>
 
               <div className="mb-3 flex flex-wrap gap-2">
@@ -1503,7 +1493,6 @@ export default function SessionPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">訂單</h2>
-                    <p className="mt-1 text-sm text-gray-500">固定畫面，品項分頁顯示</p>
                   </div>
 
                   <div className="rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-700">
@@ -1720,13 +1709,8 @@ export default function SessionPage() {
                         <div className="text-base font-bold text-gray-900">
                           總計 ${finalTotal}
                         </div>
-                        {minimumSpendShortfall > 0 && (
-                          <div className="text-sm font-semibold text-rose-600">
-                            未達低消 ${MIN_CHECKOUT_AMOUNT}，還差 ${minimumSpendShortfall}
-                          </div>
-                        )}
                         {isAllComplimentaryOrder && (
-                          <div className="text-sm font-semibold text-emerald-700">本單全招待，可直接結帳</div>
+                          <div className="text-sm font-semibold text-emerald-700">全招待</div>
                         )}
                         {remainingAmount > 0 && (
                           <div className="text-sm font-semibold text-red-600">
@@ -1755,10 +1739,6 @@ export default function SessionPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-2xl font-bold text-gray-900">確認結帳</h3>
-            <p className="mt-2 text-sm text-gray-500">
-              請再次確認本次結帳資訊，送出後此訂單會標記為已付款。
-            </p>
-
             <div className="mt-6 space-y-3 rounded-2xl bg-gray-50 p-4">
               <div className="flex justify-between text-gray-700">
                 <span>餐點小計</span>
@@ -1788,14 +1768,9 @@ export default function SessionPage() {
                   <span>總計</span>
                   <span>${finalTotal}</span>
                 </div>
-                  {minimumSpendShortfall > 0 && (
-                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
-                      本單未達低消 ${MIN_CHECKOUT_AMOUNT}，還差 ${minimumSpendShortfall}
-                    </div>
-                  )}
                   {isAllComplimentaryOrder && (
                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-                      本單所有品項皆為招待，可直接結帳。
+                      全招待
                     </div>
                   )}
                 </div>
@@ -1825,10 +1800,6 @@ export default function SessionPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-2xl font-bold text-gray-900">新增補價差</h3>
-            <p className="mt-2 text-sm text-gray-500">
-              請輸入本次補價差金額與原因，確認後會直接加入目前訂單。
-            </p>
-
             <div className="mt-6 space-y-4">
               <label className="block">
                 <span className="text-sm font-medium text-gray-600">補價差金額</span>

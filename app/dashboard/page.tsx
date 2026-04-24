@@ -522,7 +522,6 @@ export default function DashboardPage() {
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">今日後台</h1>
-                <p className="text-sm text-slate-500">統計範圍固定為 13:00 到 18:00</p>
               </div>
             </div>
 
@@ -727,20 +726,12 @@ export default function DashboardPage() {
 
             <Panel title="現金對帳摘要">
               <div className="space-y-3">
-                <CashSummaryCard label="今日現金收款" value={`$${cashPaidTotal}`} note="僅統計付款方式為現金且已付款的訂單" />
-                <CashSummaryCard label="系統應有現金" value={`$${expectedClosingCash}`} note="開店現金 + 今日現金收款" />
+                <CashSummaryCard label="今日現金收款" value={`$${cashPaidTotal}`} />
+                <CashSummaryCard label="系統應有現金" value={`$${expectedClosingCash}`} />
                 <CashSummaryCard
                   label="關帳差額"
                   value={closingDifference == null ? "尚未清點" : `${closingDifference >= 0 ? "+" : ""}$${closingDifference}`}
-                  note={
-                    closingDifference == null
-                      ? "輸入關帳現金後會自動計算"
-                      : closingDifference === 0
-                        ? "帳目一致"
-                        : closingDifference > 0
-                          ? "實際現金高於系統預估"
-                          : "實際現金低於系統預估"
-                  }
+                  note={closingDifference == null ? undefined : closingDifference === 0 ? "帳目一致" : undefined}
                   tone={
                     closingDifference == null
                       ? "text-slate-900"
@@ -749,14 +740,6 @@ export default function DashboardPage() {
                         : "text-rose-700"
                   }
                 />
-                <div className="rounded-[24px] bg-slate-50 p-4 text-sm text-slate-600">
-                  <p className="font-semibold text-slate-900">建議流程</p>
-                  <ul className="mt-2 space-y-2">
-                    <li>1. 開店前先輸入開店現金</li>
-                    <li>2. 營業中照常使用 POS 收單</li>
-                    <li>3. 關帳時輸入實際現金，系統會自動對差額</li>
-                  </ul>
-                </div>
               </div>
             </Panel>
           </section>
@@ -891,14 +874,14 @@ function CashSummaryCard({
 }: {
   label: string;
   value: string;
-  note: string;
+  note?: string;
   tone?: string;
 }) {
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white p-4">
       <p className="text-sm text-slate-500">{label}</p>
       <p className={`mt-2 text-2xl font-bold ${tone}`}>{value}</p>
-      <p className="mt-2 text-sm text-slate-500">{note}</p>
+      {note ? <p className="mt-2 text-sm text-slate-500">{note}</p> : null}
     </div>
   );
 }
