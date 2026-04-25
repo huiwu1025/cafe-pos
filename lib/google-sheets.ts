@@ -173,6 +173,26 @@ export async function ensureSheetExists(title: string, spreadsheetId?: string) {
   }, spreadsheetId);
 }
 
+export async function setSheetHidden(title: string, hidden: boolean, spreadsheetId?: string) {
+  const sheetId = await getSheetIdByTitle(title, spreadsheetId);
+  if (sheetId == null) return;
+
+  await batchUpdateSpreadsheet(
+    [
+      {
+        updateSheetProperties: {
+          properties: {
+            sheetId,
+            hidden,
+          },
+          fields: "hidden",
+        },
+      },
+    ],
+    spreadsheetId
+  );
+}
+
 export async function readSheetValues(title: string, spreadsheetId?: string) {
   try {
     const response = (await sheetsRequest(

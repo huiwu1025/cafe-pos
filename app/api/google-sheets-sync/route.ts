@@ -18,7 +18,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await syncTodayDashboardToGoogleSheets();
+    const businessDate = request.nextUrl.searchParams.get("date")?.trim() || undefined;
+    const result = await syncTodayDashboardToGoogleSheets(businessDate);
     return NextResponse.json({ ok: true, result });
   } catch (error) {
     console.error("Google Sheets sync failed", error);

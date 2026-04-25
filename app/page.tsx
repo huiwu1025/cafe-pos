@@ -10,6 +10,7 @@ type SessionInfo = {
   guestCount: number;
   paymentStatus: string;
   seatCodes: string[];
+  unservedCount: number;
   customerLabel?: string | null;
 };
 
@@ -233,6 +234,15 @@ export default function Home() {
     { label: "今日訂單數", value: `${summary.orderCount} 張`, tone: "text-violet-700" },
     { label: "未結帳單數", value: `${summary.unpaidCount} 張`, tone: "text-rose-700" },
   ];
+  const pendingServiceSessions = useMemo(() => {
+    const grouped = new Map<string, SessionInfo>();
+    for (const session of Object.values(occupiedSeats)) {
+      if (!grouped.has(session.sessionId)) grouped.set(session.sessionId, session);
+    }
+    return Array.from(grouped.values())
+      .filter((session) => session.unservedCount > 0)
+      .sort((a, b) => a.seatCodes[0].localeCompare(b.seatCodes[0], "zh-Hant"));
+  }, [occupiedSeats]);
 
   const loadTodaySummary = useCallback(async () => {
     try {
@@ -279,7 +289,31 @@ export default function Home() {
         if (!session?.id || !seat?.seat_code || session.order_status !== "open" || session.payment_status !== "unpaid") continue;
         const existing = sessionMap.get(session.id);
         if (existing) existing.seatCodes.push(seat.seat_code);
-        else sessionMap.set(session.id, { sessionId: session.id, sessionNumber: session.session_number, guestCount: Number(session.guest_count ?? 0), paymentStatus: session.payment_status, seatCodes: [seat.seat_code], customerLabel: session.customer_label ?? "" });
+        else sessionMap.set(session.id, {
+          sessionId: session.id,
+          sessionNumber: session.session_number,
+          guestCount: Number(session.guest_count ?? 0),
+          paymentStatus: session.payment_status,
+          seatCodes: [seat.seat_code],
+          unservedCount: 0,
+          customerLabel: session.customer_label ?? "",
+        });
+      }
+      const activeSessionIds = Array.from(sessionMap.keys());
+      if (activeSessionIds.length > 0) {
+        const { data: orderItemsData, error: orderItemsError } = await supabase
+          .from("order_items")
+          .select("session_id, quantity, is_served, status")
+          .in("session_id", activeSessionIds)
+          .eq("status", "active");
+        if (orderItemsError) throw orderItemsError;
+
+        for (const item of orderItemsData ?? []) {
+          if (item.is_served) continue;
+          const sessionInfo = sessionMap.get(item.session_id);
+          if (!sessionInfo) continue;
+          sessionInfo.unservedCount += Number(item.quantity ?? 0);
+        }
       }
       for (const sessionInfo of sessionMap.values()) {
         sessionInfo.seatCodes.sort(sortSeatCodes);
@@ -730,6 +764,26 @@ export default function Home() {
                 </div>
               ))}
             </div>
+            {pendingServiceSessions.length > 0 && (
+              <div className="mt-3 rounded-[22px] border border-amber-200 bg-amber-50 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-amber-900">未出餐提醒</span>
+                  {pendingServiceSessions.map((session) => (
+                    <button
+                      key={session.sessionId}
+                      type="button"
+                      onClick={() => {
+                        setViewingReservation(null);
+                        setViewingSession(session);
+                      }}
+                      className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100"
+                    >
+                      {formatSeatLabel(session.seatCodes)} {session.unservedCount} 項未出餐
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </header>
 
           <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1.5fr)_340px]">
@@ -808,6 +862,10 @@ export default function Home() {
                         <AsideCard label="來客數" value={`${viewingSession.guestCount} 人`} />
                         <AsideCard label="付款狀態" value={viewingSession.paymentStatus} />
                       </div>
+                      <AsideCard
+                        label="出餐狀態"
+                        value={viewingSession.unservedCount > 0 ? `${viewingSession.unservedCount} 項未出餐` : "已全數出餐"}
+                      />
                       <button
                         type="button"
                         onClick={() => {

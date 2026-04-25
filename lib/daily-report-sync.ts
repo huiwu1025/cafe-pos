@@ -8,6 +8,7 @@ import {
   readSheetValues,
   replaceSheetRangeValues,
   replaceSheetValues,
+  setSheetHidden,
 } from "@/lib/google-sheets";
 
 type SessionRow = {
@@ -25,16 +26,32 @@ type SessionRow = {
   customer_label?: string | null;
   created_at?: string | null;
   paid_at?: string | null;
+  amount_received?: number | null;
+  change_amount?: number | null;
 };
 
 type OrderItemRow = {
   id: string;
   session_id: string;
   product_name: string;
+  unit_price?: number | null;
   quantity: number;
   line_total: number;
   status: string;
   is_complimentary?: boolean | null;
+  is_served?: boolean | null;
+  created_at?: string | null;
+};
+
+type SessionPaymentSplitRow = {
+  id: string;
+  session_id: string;
+  split_label?: string | null;
+  payment_method: string;
+  amount: number;
+  amount_received?: number | null;
+  change_amount?: number | null;
+  sort_order: number;
 };
 
 type CashCountRow = {
@@ -135,6 +152,17 @@ type ProcurementRow = {
   note: string;
 };
 
+type ManualProcurementRow = {
+  purchase_date: string;
+  item_name: string;
+  type: string;
+  unit_price: number | null;
+  quantity: number | null;
+  shipping_fee: number | null;
+  supplier?: string | null;
+  note?: string | null;
+};
+
 type ItemProfitSummary = {
   category: string;
   quantity: number;
@@ -163,6 +191,7 @@ type SalesDetailRow = {
   complimentaryAmount: number;
   customerType: string;
   note: string;
+  paymentMethod: string;
   sortDateTime: string;
   orderGroup: string;
   sourceType: "live" | "manual";
@@ -233,7 +262,20 @@ type SheetStyleConfig = {
     type: "NUMBER" | "PERCENT" | "CURRENCY";
     pattern: string;
   }>;
-  };
+};
+
+function normalizeMonthValue(value: string | null | undefined) {
+  const raw = String(value ?? "").replace(/^'/, "").trim();
+  const match = raw.match(/^(\d{4})-(\d{2})/);
+  if (!match) return raw;
+  return `${match[1]}-${match[2]}`;
+}
+
+function buildMonthlyOrderSheetTitle(month: string) {
+  const normalized = normalizeMonthValue(month);
+  if (!/^\d{4}-\d{2}$/.test(normalized)) return "";
+  return `${normalized.slice(2)}訂單明細`;
+}
 
 const TAIPEI_TIMEZONE = "Asia/Taipei";
 const SOURCE_PRODUCT_COST_SHEET = "品項成本表";
@@ -307,12 +349,19 @@ function buildSalesDetailRows(
   sessions: SessionRow[],
   orderItems: OrderItemRow[],
   manualProductSales: ManualDailyProductSaleRow[],
-  productCosts: ProductCostItem[]
+  productCosts: ProductCostItem[],
+  paymentSplits: SessionPaymentSplitRow[]
 ) {
   const productCostMap = new Map(
       productCosts.map((item) => [normalizeProductName(item.name), item])
     );
   const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+  const splitMap = new Map<string, SessionPaymentSplitRow[]>();
+  for (const split of paymentSplits) {
+    const current = splitMap.get(split.session_id) ?? [];
+    current.push(split);
+    splitMap.set(split.session_id, current);
+  }
   const complimentaryTotalsBySession = new Map<string, number>();
 
   for (const item of orderItems) {
@@ -334,6 +383,13 @@ function buildSalesDetailRows(
       quantity > 0 ? Math.round((salesAmount / quantity) * 100) / 100 : Number(product?.price ?? 0);
     const unitCost = Number(product?.unitCost ?? 0);
     const productCost = quantity * unitCost;
+    const sessionSplits = splitMap.get(session.id) ?? [];
+    const paymentMethod =
+      sessionSplits.length > 0
+        ? sessionSplits
+            .map((split) => `${split.payment_method}${split.amount ? ` ${split.amount}` : ""}`)
+            .join(" / ")
+        : session.payment_method?.trim() || "";
 
     rows.push({
       businessDate: formatBusinessDate(session.created_at ?? ""),
@@ -351,6 +407,7 @@ function buildSalesDetailRows(
       complimentaryAmount: complimentaryTotalsBySession.get(session.id) ?? 0,
       customerType: session.customer_type ?? "",
       note: session.customer_label ?? session.session_number,
+      paymentMethod,
       sortDateTime: session.created_at ?? session.session_number,
       orderGroup: session.session_number,
       sourceType: "live",
@@ -384,6 +441,7 @@ function buildSalesDetailRows(
       complimentaryAmount: 0,
       customerType: "",
       note: item.notes ?? "",
+      paymentMethod: "",
         sortDateTime: item.business_date,
         orderGroup: item.notes ?? item.product_name,
         sourceType: "manual",
@@ -574,6 +632,42 @@ async function loadManualSessionDetails(supabase: ReturnType<typeof getSupabaseS
   return (data ?? []) as ManualSessionDetailRow[];
 }
 
+async function loadSessionPaymentSplits(supabase: ReturnType<typeof getSupabaseServerClient>) {
+  const { data, error } = await supabase
+    .from("session_payment_splits")
+    .select("*")
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    const maybeMessage = (error as { message?: string }).message ?? "";
+    if (maybeMessage.includes("session_payment_splits")) {
+      return [] as SessionPaymentSplitRow[];
+    }
+    throw error;
+  }
+
+  return (data ?? []) as SessionPaymentSplitRow[];
+}
+
+async function loadManualProcurementsFromDb(supabase: ReturnType<typeof getSupabaseServerClient>) {
+  const { data, error } = await supabase
+    .from("manual_procurements")
+    .select("*")
+    .order("purchase_date", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    const maybeMessage = (error as { message?: string }).message ?? "";
+    if (maybeMessage.includes("manual_procurements")) {
+      return [] as ManualProcurementRow[];
+    }
+    throw error;
+  }
+
+  return (data ?? []) as ManualProcurementRow[];
+}
+
 async function loadProductCosts(sourceSpreadsheetId?: string) {
   const rowsFromReport = await readSheetValues(SOURCE_PRODUCT_COST_SHEET);
   const rowsFromSource =
@@ -681,7 +775,10 @@ async function loadFixedExpenses(sourceSpreadsheetId?: string) {
   return items;
 }
 
-async function loadProcurements(sourceSpreadsheetId?: string) {
+async function loadProcurements(
+  manualProcurementRows: ManualProcurementRow[] = [],
+  sourceSpreadsheetId?: string
+) {
   const rowsFromReport = await readSheetValues("進貨耗材");
   const rowsFromSource =
     rowsFromReport.length === 0 && sourceSpreadsheetId
@@ -717,7 +814,28 @@ async function loadProcurements(sourceSpreadsheetId?: string) {
     }
   }
 
-  return items;
+  for (const row of manualProcurementRows) {
+    const date = row.purchase_date ?? "";
+    if (!date) continue;
+    const month = date.slice(0, 7);
+    const unitPrice = toNumber(row.unit_price);
+    const quantity = toNumber(row.quantity);
+    const shippingFee = toNumber(row.shipping_fee);
+    items.push({
+      date,
+      month,
+      item: row.item_name ?? "",
+      type: row.type ?? "",
+      unitPrice,
+      quantity,
+      shippingFee,
+      totalAmount: unitPrice * quantity + shippingFee,
+      supplier: row.supplier ?? "",
+      note: row.note ?? "",
+    });
+  }
+
+  return items.sort((a, b) => a.date.localeCompare(b.date) || a.item.localeCompare(b.item, "zh-Hant"));
 }
 
 function buildItemProfitSummary(orderItems: OrderItemRow[], productCosts: ProductCostItem[]) {
@@ -802,13 +920,40 @@ function sumBy<T>(items: T[], predicate: (item: T) => boolean, value: (item: T) 
   return items.reduce((sum, item) => (predicate(item) ? sum + value(item) : sum), 0);
 }
 
-function buildPaymentSummary(sessions: SessionRow[]) {
+function buildPaymentSummary(sessions: SessionRow[], paymentSplits: SessionPaymentSplitRow[] = []) {
   const summary = new Map<
     string,
     { count: number; grossAmount: number; feeAmount: number; netAmount: number }
   >();
+  const splitMap = new Map<string, SessionPaymentSplitRow[]>();
+  for (const split of paymentSplits) {
+    const current = splitMap.get(split.session_id) ?? [];
+    current.push(split);
+    splitMap.set(split.session_id, current);
+  }
 
   for (const session of sessions) {
+    const splits = splitMap.get(session.id) ?? [];
+    if (splits.length > 0) {
+      for (const split of splits) {
+        const method = split.payment_method?.trim() || "未填付款方式";
+        const grossAmount = Number(split.amount ?? 0);
+        const feeAmount = calculatePaymentFee(grossAmount, method);
+        const existing = summary.get(method) ?? {
+          count: 0,
+          grossAmount: 0,
+          feeAmount: 0,
+          netAmount: 0,
+        };
+        existing.count += 1;
+        existing.grossAmount += grossAmount;
+        existing.feeAmount += feeAmount;
+        existing.netAmount += grossAmount - feeAmount;
+        summary.set(method, existing);
+      }
+      continue;
+    }
+
     const method = session.payment_method?.trim() || "未填付款方式";
     const grossAmount = Number(session.total_amount ?? 0);
     const feeAmount = calculatePaymentFee(grossAmount, method);
@@ -834,14 +979,18 @@ function buildDailyMetric(
   orderItems: OrderItemRow[],
   productCosts: ProductCostItem[],
   fixedExpenses: FixedExpenseRow[],
-  cashCount: CashCountRow | null
+  cashCount: CashCountRow | null,
+  paymentSplits: SessionPaymentSplitRow[] = []
 ): DailyMetric {
   const paidSessions = sessions.filter((session) => session.payment_status === "paid");
   const activeOrderItems = orderItems.filter((item) => item.status === "active");
   const complimentary = sumBy(activeOrderItems, (item) => Boolean(item.is_complimentary), (item) =>
     Number(item.line_total ?? 0)
   );
-  const paymentSummary = buildPaymentSummary(paidSessions);
+  const paymentSummary = buildPaymentSummary(
+    paidSessions,
+    paymentSplits.filter((split) => paidSessions.some((session) => session.id === split.session_id))
+  );
   const paymentFees = Array.from(paymentSummary.values()).reduce((sum, item) => sum + item.feeAmount, 0);
   const productRevenue = paidSessions.reduce(
     (sum, session) => sum + Number(session.subtotal_amount ?? session.total_amount ?? 0),
@@ -850,21 +999,33 @@ function buildDailyMetric(
   const discount = paidSessions.reduce((sum, session) => sum + Number(session.discount_amount ?? 0), 0);
   const tip = paidSessions.reduce((sum, session) => sum + Number(session.tip_amount ?? 0), 0);
   const actualReceived = paidSessions.reduce((sum, session) => sum + Number(session.total_amount ?? 0), 0);
-  const cashIncome = sumBy(
-    paidSessions,
-    (session) => (session.payment_method ?? "") === "現金",
-    (session) => Number(session.total_amount ?? 0)
-  );
-  const transferIncome = sumBy(
-    paidSessions,
-    (session) => (session.payment_method ?? "") === "歐付寶",
-    (session) => Number(session.total_amount ?? 0)
-  );
-  const otherIncome = paidSessions.reduce((sum, session) => {
+  const splitMap = new Map<string, SessionPaymentSplitRow[]>();
+  for (const split of paymentSplits) {
+    const current = splitMap.get(split.session_id) ?? [];
+    current.push(split);
+    splitMap.set(split.session_id, current);
+  }
+  let cashIncome = 0;
+  let transferIncome = 0;
+  let otherIncome = 0;
+  for (const session of paidSessions) {
+    const splits = splitMap.get(session.id) ?? [];
+    if (splits.length > 0) {
+      for (const split of splits) {
+        const method = split.payment_method ?? "";
+        const amount = Number(split.amount ?? 0);
+        if (method === "現金") cashIncome += amount;
+        else if (method === "歐付寶") transferIncome += amount;
+        else otherIncome += amount;
+      }
+      continue;
+    }
     const method = session.payment_method ?? "";
-    if (method === "現金" || method === "歐付寶") return sum;
-    return sum + Number(session.total_amount ?? 0);
-  }, 0);
+    const amount = Number(session.total_amount ?? 0);
+    if (method === "現金") cashIncome += amount;
+    else if (method === "歐付寶") transferIncome += amount;
+    else otherIncome += amount;
+  }
   const itemSummary = buildItemProfitSummary(activeOrderItems, productCosts);
   const productCost = Array.from(itemSummary.values()).reduce((sum, item) => sum + item.estimatedCost, 0);
   const paidFixedExpenses = fixedExpenses.filter((item) => item.date === date && item.isPaid);
@@ -1722,24 +1883,26 @@ async function applySheetCharts(itemEntryCount: number, stayEntryCount: number) 
   await batchUpdateSpreadsheet(requests);
 }
 
-export async function syncTodayDashboardToGoogleSheets() {
+export async function syncTodayDashboardToGoogleSheets(targetBusinessDate?: string) {
   const supabase = getSupabaseServerClient();
   const sourceSpreadsheetId = getCostSpreadsheetId();
-  const businessDate = todayIsoDate();
+  const businessDate = targetBusinessDate?.trim() || todayIsoDate();
 
   const { sessions: allSessions, orderItems: allOrderItems } = await loadAllSessionsAndItems(supabase);
+  const paymentSplits = await loadSessionPaymentSplits(supabase);
   const cashCount = await loadCashCountForDate(supabase, businessDate);
   const allCashCounts = await loadAllCashCounts(supabase);
   const manualDailyReports = await loadManualDailyReports(supabase);
   const manualProductSales = await loadManualDailyProductSales(supabase);
   const manualSessionDetails = await loadManualSessionDetails(supabase);
+  const manualProcurements = await loadManualProcurementsFromDb(supabase);
 
   const availableSheets = sourceSpreadsheetId ? await listSheetTitles(sourceSpreadsheetId) : [];
   const productCostLoadResult = await loadProductCosts(sourceSpreadsheetId || undefined);
   const productCosts = productCostLoadResult.items;
   const productPriceHistory = await loadProductPriceHistory(supabase);
   const fixedExpenses = await loadFixedExpenses(sourceSpreadsheetId || undefined);
-  const procurements = await loadProcurements(sourceSpreadsheetId || undefined);
+  const procurements = await loadProcurements(manualProcurements, sourceSpreadsheetId || undefined);
 
   const sessions = allSessions.filter(
     (session) => formatBusinessDate(session.created_at ?? "") === businessDate
@@ -1763,17 +1926,25 @@ export async function syncTodayDashboardToGoogleSheets() {
     const dayIds = new Set(daySessions.map((session) => session.id));
     const dayItems = allOrderItems.filter((item) => dayIds.has(item.session_id));
     const dayCashCount = cashCountByDate.get(date) ?? null;
-    const baseMetric = buildDailyMetric(date, daySessions, dayItems, productCosts, fixedExpenses, dayCashCount);
+    const baseMetric = buildDailyMetric(
+      date,
+      daySessions,
+      dayItems,
+      productCosts,
+      fixedExpenses,
+      dayCashCount,
+      paymentSplits
+    );
     const manualMetric = manualDailyReports.find((item) => item.business_date === date);
     dailyMetrics.push(mergeManualDailyMetric(baseMetric, manualMetric));
   }
 
   const todayMetric =
     dailyMetrics.find((item) => item.date === businessDate) ??
-    buildDailyMetric(businessDate, sessions, orderItems, productCosts, fixedExpenses, cashCount);
+    buildDailyMetric(businessDate, sessions, orderItems, productCosts, fixedExpenses, cashCount, paymentSplits);
 
   const paidSessions = sessions.filter((session) => session.payment_status === "paid");
-  const paymentSummary = buildPaymentSummary(paidSessions);
+  const paymentSummary = buildPaymentSummary(paidSessions, paymentSplits);
   const totalPaymentFees = Array.from(paymentSummary.values()).reduce(
     (sum, item) => sum + item.feeAmount,
     0
@@ -1794,13 +1965,14 @@ export async function syncTodayDashboardToGoogleSheets() {
     allSessions,
     allOrderItems,
     manualProductSales,
-    productCosts
+    productCosts,
+    paymentSplits
   );
 
   const allPaidSessions = allSessions.filter((session) => session.payment_status === "paid");
   const allRevenue = allPaidSessions.reduce((sum, session) => sum + Number(session.total_amount ?? 0), 0);
   const allGuests = allSessions.reduce((sum, session) => sum + Number(session.guest_count ?? 0), 0);
-  const allPaymentSummary = buildPaymentSummary(allPaidSessions);
+  const allPaymentSummary = buildPaymentSummary(allPaidSessions, paymentSplits);
   const allPaymentFees = Array.from(allPaymentSummary.values()).reduce(
     (sum, item) => sum + item.feeAmount,
     0
@@ -1816,7 +1988,7 @@ export async function syncTodayDashboardToGoogleSheets() {
   const cumulativeProfit = allNetRevenue - allEstimatedCost - fixedExpenseTotal;
   const allGrossProfit = allRevenue - allEstimatedCost;
   const allGrossMargin = allRevenue > 0 ? allGrossProfit / allRevenue : "";
-  const allPaymentSummaryWithManual = buildPaymentSummary(allPaidSessions);
+  const allPaymentSummaryWithManual = buildPaymentSummary(allPaidSessions, paymentSplits);
 
   for (const manual of manualDailyReports) {
     const cashAmount = Number(manual.cash_income ?? 0);
@@ -2004,6 +2176,80 @@ export async function syncTodayDashboardToGoogleSheets() {
           ];
       }),
     ]);
+
+  const monthlyDetailHeaders = [
+    "日期",
+    "月份",
+    "主單編號",
+    "品項",
+    "類別",
+    "銷售數量",
+    "售價",
+    "單位成本",
+    "商品營業額",
+    "商品成本",
+    "毛利",
+    "折扣金額",
+    "招待金額",
+    "客群類型",
+    "備註",
+  ];
+
+  const salesDetailRowsByMonth = new Map<string, SalesDetailRow[]>();
+  for (const row of salesDetailRows) {
+    const normalizedMonth = normalizeMonthValue(row.month);
+    const current = salesDetailRowsByMonth.get(normalizedMonth) ?? [];
+    current.push({
+      ...row,
+      month: normalizedMonth,
+    });
+    salesDetailRowsByMonth.set(normalizedMonth, current);
+  }
+
+  for (const [month, rows] of salesDetailRowsByMonth.entries()) {
+    const title = buildMonthlyOrderSheetTitle(month);
+    if (!title) continue;
+    await replaceSheetValues(title, [
+      monthlyDetailHeaders,
+      ...rows.map((row, index) => {
+        const previous = rows[index - 1];
+        const sameGroup =
+          previous &&
+          previous.businessDate === row.businessDate &&
+          previous.sourceType === row.sourceType &&
+          previous.orderGroup === row.orderGroup;
+
+        return [
+          row.businessDate,
+          row.month,
+          sameGroup ? "" : row.sessionNumber,
+          row.productName,
+          row.category,
+          row.quantity,
+          row.unitPrice,
+          row.unitCost,
+          row.salesAmount,
+          row.productCost,
+          row.grossProfit,
+          sameGroup ? "" : row.discountAmount,
+          sameGroup ? "" : row.complimentaryAmount,
+          row.customerType,
+          row.note,
+        ];
+      }),
+    ]);
+  }
+
+  const currentMonthTitle = buildMonthlyOrderSheetTitle(businessDate.slice(0, 7));
+  const currentTitles = await listSheetTitles();
+  for (const title of currentTitles) {
+    if (title === "訂單明細") {
+      await setSheetHidden(title, true);
+      continue;
+    }
+    if (!/^\d{2}-\d{2}訂單明細$/.test(title)) continue;
+    await setSheetHidden(title, title !== currentMonthTitle);
+  }
 
   const stayAnalysisMap = new Map<
     string,
@@ -2503,6 +2749,30 @@ export async function syncTodayDashboardToGoogleSheets() {
           { columns: [5, 14], color: { red: 0.97, green: 0.97, blue: 0.97 } },
         ],
       },
+      ...Array.from(salesDetailRowsByMonth.keys())
+        .map((month) => buildMonthlyOrderSheetTitle(month))
+        .filter(Boolean)
+        .map((title) => ({
+          title,
+          frozenRows: 1,
+          headerRowIndex: 0,
+          dateColumns: [0],
+          currencyColumns: [6, 7, 8, 9, 10, 11, 12],
+          autoResizeColumnCount: 15,
+          headerRowHeight: 42,
+          bodyRowHeight: 34,
+          columnWidths: [145, 125, 180, 220, 140, 110, 125, 125, 145, 145, 145, 135, 135, 140, 260],
+          leftAlignColumns: [2, 3, 4, 14],
+          centerAlignColumns: [0, 1, 5, 13],
+          rightAlignColumns: [6, 7, 8, 9, 10, 11, 12],
+          columnBackgrounds: [
+            { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+            { columns: [2, 3, 4, 13], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+            { columns: [6, 7, 8, 9, 10], color: { red: 1, green: 0.96, blue: 0.9 } },
+            { columns: [11, 12], color: { red: 1, green: 0.92, blue: 0.92 } },
+            { columns: [5, 14], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+          ],
+        })),
       {
         title: "品項成本表",
         frozenRows: 1,

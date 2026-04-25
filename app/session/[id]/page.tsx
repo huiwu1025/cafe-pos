@@ -1723,11 +1723,11 @@ export default function SessionPage() {
 
                   <button
                     type="button"
-                    onClick={openCheckoutModal}
-                    disabled={isPaying || isLocked || minimumSpendShortfall > 0}
+                    onClick={() => router.push(`/session/${sessionId}/checkout`)}
+                    disabled={isLocked}
                     className="mt-3 min-h-[56px] w-full rounded-3xl bg-emerald-500 px-4 text-xl font-bold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                  {isLocked ? "已結帳" : isPaying ? "結帳中..." : "結帳確認"}
+                  {isLocked ? "已結帳" : "前往結帳"}
                 </button>
               </div>
             </section>

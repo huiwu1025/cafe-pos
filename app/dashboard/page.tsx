@@ -80,6 +80,18 @@ type ManualDailyReportRow = {
   notes: string | null;
 };
 
+type ManualProcurementRow = {
+  id: string;
+  purchase_date: string;
+  item_name: string;
+  type: string;
+  unit_price: number | null;
+  quantity: number | null;
+  shipping_fee: number | null;
+  supplier: string | null;
+  note: string | null;
+};
+
 const CASH_DENOMINATIONS = [1000, 500, 100, 50, 10, 5, 1];
 
 function todayIsoDate() {
@@ -145,12 +157,13 @@ function calculateBreakdownTotal(breakdown: CashBreakdown) {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"overview" | "cash" | "manual">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "cash" | "manual" | "procurement">("overview");
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [orderItems, setOrderItems] = useState<OrderItemRow[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSessionCard[]>([]);
   const [cashCount, setCashCount] = useState<CashCountRow | null>(null);
   const [manualReports, setManualReports] = useState<ManualDailyReportRow[]>([]);
+  const [procurementRows, setProcurementRows] = useState<ManualProcurementRow[]>([]);
   const [openingBreakdown, setOpeningBreakdown] = useState<CashBreakdown>(createEmptyBreakdown);
   const [openingNotesInput, setOpeningNotesInput] = useState("");
   const [closingBreakdown, setClosingBreakdown] = useState<CashBreakdown>(createEmptyBreakdown);
@@ -159,6 +172,8 @@ export default function DashboardPage() {
   const [isSavingOpening, setIsSavingOpening] = useState(false);
   const [isSavingClosing, setIsSavingClosing] = useState(false);
   const [isSavingManual, setIsSavingManual] = useState(false);
+  const [isSavingProcurement, setIsSavingProcurement] = useState(false);
+  const [cashBusinessDate, setCashBusinessDate] = useState(todayIsoDate());
   const [manualDate, setManualDate] = useState(todayIsoDate());
   const [manualGuestCount, setManualGuestCount] = useState("0");
   const [manualProductRevenue, setManualProductRevenue] = useState("0");
@@ -173,6 +188,14 @@ export default function DashboardPage() {
   const [manualReconciliationDiff, setManualReconciliationDiff] = useState("0");
   const [manualRentAmount, setManualRentAmount] = useState("0");
   const [manualNotes, setManualNotes] = useState("");
+  const [procurementDate, setProcurementDate] = useState(todayIsoDate());
+  const [procurementItemName, setProcurementItemName] = useState("");
+  const [procurementType, setProcurementType] = useState("飲品原料");
+  const [procurementUnitPrice, setProcurementUnitPrice] = useState("0");
+  const [procurementQuantity, setProcurementQuantity] = useState("1");
+  const [procurementShippingFee, setProcurementShippingFee] = useState("0");
+  const [procurementSupplier, setProcurementSupplier] = useState("");
+  const [procurementNote, setProcurementNote] = useState("");
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -182,7 +205,7 @@ export default function DashboardPage() {
       todayStart.setHours(0, 0, 0, 0);
       const tomorrowStart = new Date(todayStart);
       tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-      const businessDate = todayIsoDate();
+      const businessDate = cashBusinessDate;
 
       const { data: sessionsData, error: sessionsError } = await supabase
         .from("dining_sessions")
@@ -265,6 +288,18 @@ export default function DashboardPage() {
         }
       }
 
+      const { data: procurementData, error: procurementError } = await supabase
+        .from("manual_procurements")
+        .select("*")
+        .order("purchase_date", { ascending: false });
+
+      if (procurementError) {
+        const maybeMessage = (procurementError as { message?: string }).message ?? "";
+        if (!maybeMessage.includes("manual_procurements")) {
+          throw procurementError;
+        }
+      }
+
       setSessions(sessionsData ?? []);
       setOrderItems(itemsData);
       setActiveSessions(
@@ -279,6 +314,7 @@ export default function DashboardPage() {
       );
       setCashCount(cashData ?? null);
       setManualReports(manualData ?? []);
+      setProcurementRows(procurementData ?? []);
       setOpeningBreakdown(normalizeBreakdown(cashData?.opening_breakdown));
       setOpeningNotesInput(cashData?.opening_notes ?? "");
       setClosingBreakdown(normalizeBreakdown(cashData?.closing_breakdown));
@@ -289,7 +325,7 @@ export default function DashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [cashBusinessDate]);
 
   useEffect(() => {
     loadDashboard();
@@ -411,7 +447,7 @@ export default function DashboardPage() {
   }, [cashCount?.closing_cash, expectedClosingCash]);
 
   async function saveCashCount(mode: "opening" | "closing") {
-    const businessDate = todayIsoDate();
+    const businessDate = cashBusinessDate;
     const cashValue = mode === "opening" ? openingCountedTotal : closingCountedTotal;
     const notesValue = mode === "opening" ? openingNotesInput.trim() : closingNotesInput.trim();
 
@@ -507,6 +543,51 @@ export default function DashboardPage() {
     }
   }
 
+  async function saveProcurement() {
+    if (!procurementItemName.trim()) {
+      alert("請輸入採買品項");
+      return;
+    }
+
+    try {
+      setIsSavingProcurement(true);
+
+      const payload = {
+        purchase_date: procurementDate,
+        item_name: procurementItemName.trim(),
+        type: procurementType,
+        unit_price: Number(procurementUnitPrice || 0),
+        quantity: Number(procurementQuantity || 0),
+        shipping_fee: Number(procurementShippingFee || 0),
+        supplier: procurementSupplier.trim() || null,
+        note: procurementNote.trim() || null,
+      };
+
+      const { error } = await supabase.from("manual_procurements").insert(payload);
+      if (error) throw error;
+
+      setProcurementItemName("");
+      setProcurementType("飲品原料");
+      setProcurementUnitPrice("0");
+      setProcurementQuantity("1");
+      setProcurementShippingFee("0");
+      setProcurementSupplier("");
+      setProcurementNote("");
+      alert("採買紀錄已儲存");
+      await loadDashboard();
+    } catch (error) {
+      console.error("Failed to save procurement", error);
+      const maybeMessage = error as { message?: string };
+      if (maybeMessage?.message?.includes("manual_procurements")) {
+        alert("請先在 Supabase 執行 supabase/20260425_manual_procurements.sql");
+        return;
+      }
+      alert("儲存採買紀錄失敗");
+    } finally {
+      setIsSavingProcurement(false);
+    }
+  }
+
   if (isLoading) {
     return <main className="pos-shell p-6 text-slate-600">讀取中...</main>;
   }
@@ -583,6 +664,15 @@ export default function DashboardPage() {
               }`}
             >
               歷史補登
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("procurement")}
+              className={`h-11 rounded-2xl px-4 text-sm font-semibold ${
+                activeTab === "procurement" ? "bg-fuchsia-500 text-white" : "bg-slate-100 text-slate-700"
+              }`}
+            >
+              採買記錄
             </button>
           </div>
         </header>
@@ -690,6 +780,15 @@ export default function DashboardPage() {
           <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[1.32fr_0.68fr]">
             <Panel title="開店與關帳現金">
               <div className="space-y-3">
+                <Field label="編輯營業日期">
+                  <input
+                    type="date"
+                    value={cashBusinessDate}
+                    onChange={(event) => setCashBusinessDate(event.target.value)}
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-amber-400"
+                  />
+                </Field>
+
                 <div className="grid gap-3 lg:grid-cols-2">
                   <CashSummaryCard label="開店現金" value={cashCount?.opening_cash != null ? `$${cashCount.opening_cash}` : `$${openingCountedTotal}`} note={formatDateTime(cashCount?.opening_counted_at)} />
                   <CashSummaryCard label="關帳現金" value={cashCount?.closing_cash != null ? `$${cashCount.closing_cash}` : `$${closingCountedTotal}`} note={formatDateTime(cashCount?.closing_counted_at)} />
@@ -743,7 +842,7 @@ export default function DashboardPage() {
               </div>
             </Panel>
           </section>
-        ) : (
+        ) : activeTab === "manual" ? (
           <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[1.1fr_0.9fr]">
             <Panel title="歷史日結補登">
               <div className="grid gap-3 md:grid-cols-2">
@@ -816,6 +915,134 @@ export default function DashboardPage() {
                       <p className="mt-3 text-sm text-slate-500">{report.notes || "無備註"}</p>
                     </div>
                   ))}
+                </div>
+              )}
+            </Panel>
+          </section>
+        ) : (
+          <section className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[1.05fr_0.95fr]">
+            <Panel title="當日採買補登">
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="採買日期">
+                  <input
+                    type="date"
+                    value={procurementDate}
+                    onChange={(event) => setProcurementDate(event.target.value)}
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-fuchsia-400"
+                  />
+                </Field>
+                <Field label="品項">
+                  <input
+                    type="text"
+                    value={procurementItemName}
+                    onChange={(event) => setProcurementItemName(event.target.value)}
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-fuchsia-400"
+                    placeholder="例如：牛奶、鮮奶油、紙杯"
+                  />
+                </Field>
+                <Field label="類型">
+                  <select
+                    value={procurementType}
+                    onChange={(event) => setProcurementType(event.target.value)}
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-fuchsia-400"
+                  >
+                    {["飲品原料", "食品原料", "包材", "咖啡豆", "雜費"].map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="供應商">
+                  <input
+                    type="text"
+                    value={procurementSupplier}
+                    onChange={(event) => setProcurementSupplier(event.target.value)}
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-fuchsia-400"
+                    placeholder="例如：六甲、全聯、7-11"
+                  />
+                </Field>
+                <Field label="單價">
+                  <input
+                    type="number"
+                    min="0"
+                    value={procurementUnitPrice}
+                    onChange={(event) => setProcurementUnitPrice(event.target.value)}
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-fuchsia-400"
+                  />
+                </Field>
+                <Field label="數量">
+                  <input
+                    type="number"
+                    min="0"
+                    value={procurementQuantity}
+                    onChange={(event) => setProcurementQuantity(event.target.value)}
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-fuchsia-400"
+                  />
+                </Field>
+                <Field label="運費">
+                  <input
+                    type="number"
+                    min="0"
+                    value={procurementShippingFee}
+                    onChange={(event) => setProcurementShippingFee(event.target.value)}
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-fuchsia-400"
+                  />
+                </Field>
+              </div>
+
+              <Field label="備註">
+                <textarea
+                  value={procurementNote}
+                  onChange={(event) => setProcurementNote(event.target.value)}
+                  rows={3}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-fuchsia-400"
+                  placeholder="例如：營業中途緊急補買牛奶"
+                />
+              </Field>
+
+              <button
+                type="button"
+                onClick={saveProcurement}
+                disabled={isSavingProcurement}
+                className="mt-4 h-12 w-full rounded-2xl bg-fuchsia-500 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {isSavingProcurement ? "儲存中..." : "儲存採買紀錄"}
+              </button>
+            </Panel>
+
+            <Panel title="最近採買紀錄">
+              {procurementRows.length === 0 ? (
+                <Empty text="尚未補登任何採買紀錄" />
+              ) : (
+                <div className="space-y-3">
+                  {procurementRows.map((row) => {
+                    const unitPrice = Number(row.unit_price ?? 0);
+                    const quantity = Number(row.quantity ?? 0);
+                    const shippingFee = Number(row.shipping_fee ?? 0);
+                    const total = unitPrice * quantity + shippingFee;
+
+                    return (
+                      <div key={row.id} className="rounded-[24px] border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm text-slate-500">{row.purchase_date}</p>
+                            <p className="text-lg font-bold text-slate-900">{row.item_name}</p>
+                          </div>
+                          <p className="text-lg font-bold text-fuchsia-700">${total}</p>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <Mini label="類型" value={row.type} />
+                          <Mini label="供應商" value={row.supplier || "未填"} />
+                          <Mini label="單價 × 數量" value={`$${unitPrice} × ${quantity}`} />
+                          <Mini label="運費" value={`$${shippingFee}`} />
+                        </div>
+
+                        <p className="mt-3 text-sm text-slate-500">{row.note || "無備註"}</p>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </Panel>
