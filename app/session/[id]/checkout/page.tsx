@@ -39,6 +39,7 @@ type PaymentSplit = {
   id: string;
   splitLabel: string;
   paymentMethod: string;
+  tipAmount: string;
   amountReceived: string;
   selectedItemIds: string[];
 };
@@ -48,6 +49,7 @@ type SessionPaymentSplitRow = {
   split_label: string | null;
   payment_method: string;
   amount: number | null;
+  tip_amount?: number | null;
   amount_received: number | null;
   sort_order: number | null;
 };
@@ -76,8 +78,9 @@ function formatDateToTaipeiIso(value: string | null | undefined) {
 function createSplitRow(index: number, paymentMethod = "現金", selectedItemIds: string[] = []): PaymentSplit {
   return {
     id: `local-${index}-${Math.random().toString(36).slice(2, 8)}`,
-    splitLabel: `第 ${index + 1} 筆`,
+    splitLabel: `分帳 ${index + 1}`,
     paymentMethod,
+    tipAmount: "",
     amountReceived: "",
     selectedItemIds,
   };
@@ -131,8 +134,9 @@ export default function SessionCheckoutPage() {
 
     const existingSplits = ((splitData ?? []) as SessionPaymentSplitRow[]).map((row, index) => ({
       id: row.id,
-      splitLabel: row.split_label?.split("｜")[0] ?? `第 ${index + 1} 筆`,
+      splitLabel: row.split_label?.split("（")[0]?.trim() || `分帳 ${index + 1}`,
       paymentMethod: row.payment_method || "現金",
+      tipAmount: String(Number(row.tip_amount ?? 0)),
       amountReceived: String(Number(row.amount_received ?? row.amount ?? 0)),
       selectedItemIds: index === 0 ? allItemIds : [],
     }));
@@ -174,6 +178,7 @@ export default function SessionCheckoutPage() {
   const tipAmount = useMemo(() => safeNumber(session?.tip_amount ?? 0), [session?.tip_amount]);
   const discountAmount = useMemo(() => safeNumber(session?.discount_amount ?? 0), [session?.discount_amount]);
   const finalTotal = useMemo(() => Math.max(Number(session?.total_amount ?? 0), 0), [session?.total_amount]);
+  const baseTotalWithoutTip = useMemo(() => Math.max(finalTotal - tipAmount, 0), [finalTotal, tipAmount]);
 
   const sessionBusinessDate = useMemo(
     () => formatDateToTaipeiIso(session?.created_at ?? null),
@@ -187,10 +192,6 @@ export default function SessionCheckoutPage() {
     () => orderItems.length > 0 && orderItems.every((item) => Boolean(item.is_complimentary)),
     [orderItems]
   );
-  const minimumSpendShortfall = useMemo(() => {
-    if (!isMinimumSpendRuleActive || isAllComplimentaryOrder) return 0;
-    return Math.max(MIN_CHECKOUT_AMOUNT - finalTotal, 0);
-  }, [finalTotal, isAllComplimentaryOrder, isMinimumSpendRuleActive]);
 
   useEffect(() => {
     if (!splits.length) {
@@ -212,9 +213,23 @@ export default function SessionCheckoutPage() {
     return next;
   }, [splits]);
 
+  const splitTipTotal = useMemo(
+    () => splits.reduce((sum, split) => sum + safeNumber(split.tipAmount), 0),
+    [splits]
+  );
+  const checkoutTargetTotal = useMemo(
+    () => baseTotalWithoutTip + splitTipTotal,
+    [baseTotalWithoutTip, splitTipTotal]
+  );
+  const minimumSpendShortfall = useMemo(() => {
+    if (!isMinimumSpendRuleActive || isAllComplimentaryOrder) return 0;
+    return Math.max(MIN_CHECKOUT_AMOUNT - checkoutTargetTotal, 0);
+  }, [checkoutTargetTotal, isAllComplimentaryOrder, isMinimumSpendRuleActive]);
+
   const splitComputedAmounts = useMemo(() => {
     const grossBySplit = splits.map((split) => ({
       id: split.id,
+      tip: safeNumber(split.tipAmount),
       gross: split.selectedItemIds.reduce((sum, itemId) => {
         const item = orderItems.find((entry) => entry.id === itemId);
         if (!item || item.is_complimentary) return sum;
@@ -226,30 +241,30 @@ export default function SessionCheckoutPage() {
     const next = new Map<string, number>();
 
     if (totalGross <= 0) {
-      for (const split of splits) next.set(split.id, 0);
+      for (const split of splits) next.set(split.id, safeNumber(split.tipAmount));
       return next;
     }
 
     const payableSplits = grossBySplit.filter((entry) => entry.gross > 0);
-    let allocated = 0;
+    let allocatedBase = 0;
 
     payableSplits.forEach((entry, index) => {
       if (index === payableSplits.length - 1) {
-        next.set(entry.id, Math.max(finalTotal - allocated, 0));
+        next.set(entry.id, Math.max(baseTotalWithoutTip - allocatedBase, 0) + entry.tip);
         return;
       }
 
-      const amount = Math.round((entry.gross / totalGross) * finalTotal);
-      allocated += amount;
-      next.set(entry.id, amount);
+      const amount = Math.round((entry.gross / totalGross) * baseTotalWithoutTip);
+      allocatedBase += amount;
+      next.set(entry.id, amount + entry.tip);
     });
 
     for (const split of splits) {
-      if (!next.has(split.id)) next.set(split.id, 0);
+      if (!next.has(split.id)) next.set(split.id, safeNumber(split.tipAmount));
     }
 
     return next;
-  }, [finalTotal, orderItems, splits]);
+  }, [baseTotalWithoutTip, orderItems, splits]);
 
   const splitAmountTotal = useMemo(
     () => splits.reduce((sum, split) => sum + safeNumber(splitComputedAmounts.get(split.id)), 0),
@@ -271,7 +286,11 @@ export default function SessionCheckoutPage() {
     [splitComputedAmounts, splits]
   );
 
-  function updateSplit(splitId: string, field: "splitLabel" | "paymentMethod" | "amountReceived", value: string) {
+  function updateSplit(
+    splitId: string,
+    field: "splitLabel" | "paymentMethod" | "tipAmount" | "amountReceived",
+    value: string
+  ) {
     setSplits((prev) =>
       prev.map((split) => (split.id === splitId ? { ...split, [field]: value } : split))
     );
@@ -293,6 +312,7 @@ export default function SessionCheckoutPage() {
         remaining[0] = {
           ...remaining[0],
           selectedItemIds: [...new Set([...remaining[0].selectedItemIds, ...removed.selectedItemIds])],
+          tipAmount: String(safeNumber(remaining[0].tipAmount) + safeNumber(removed.tipAmount)),
         };
       }
 
@@ -332,24 +352,27 @@ export default function SessionCheckoutPage() {
     if (!session) return;
 
     if (minimumSpendShortfall > 0) {
-      alert(`本單未達低消 ${MIN_CHECKOUT_AMOUNT} 元，還差 ${minimumSpendShortfall} 元`);
+      alert(`此單未達低消 ${MIN_CHECKOUT_AMOUNT} 元，還差 ${minimumSpendShortfall} 元`);
       return;
     }
 
-    if (Math.round(splitAmountTotal) !== Math.round(finalTotal)) {
-      alert(`分帳總額需等於總計 ${finalTotal} 元，目前為 ${splitAmountTotal} 元`);
+    if (Math.round(splitAmountTotal) !== Math.round(checkoutTargetTotal)) {
+      alert(`分帳總額需等於結帳總額 ${checkoutTargetTotal} 元，目前為 ${splitAmountTotal} 元`);
       return;
     }
 
     const activeSplits = splits.filter(
-      (split) => split.selectedItemIds.length > 0 || safeNumber(splitComputedAmounts.get(split.id)) > 0
+      (split) =>
+        split.selectedItemIds.length > 0 ||
+        safeNumber(splitComputedAmounts.get(split.id)) > 0 ||
+        safeNumber(split.tipAmount) > 0
     );
 
     for (const split of activeSplits) {
       const amount = safeNumber(splitComputedAmounts.get(split.id));
       const received = safeNumber(split.amountReceived);
       if (received < amount) {
-        alert(`「${split.splitLabel || "分帳"}」實收不足`);
+        alert(`${split.splitLabel || "分帳"} 的實收金額不足`);
         return;
       }
     }
@@ -362,9 +385,10 @@ export default function SessionCheckoutPage() {
         const amountReceived = safeNumber(split.amountReceived);
         return {
           session_id: sessionId,
-          split_label: `${split.splitLabel.trim() || `第 ${index + 1} 筆`}｜${split.selectedItemIds.length} 項`,
+          split_label: `${split.splitLabel.trim() || `分帳 ${index + 1}`}（${split.selectedItemIds.length} 項）`,
           payment_method: split.paymentMethod,
           amount,
+          tip_amount: safeNumber(split.tipAmount),
           amount_received: amountReceived,
           change_amount: Math.max(amountReceived - amount, 0),
           sort_order: index,
@@ -381,10 +405,7 @@ export default function SessionCheckoutPage() {
       }
 
       if (normalizedSplits.length > 0) {
-        const { error: insertError } = await supabase
-          .from("session_payment_splits")
-          .insert(normalizedSplits);
-
+        const { error: insertError } = await supabase.from("session_payment_splits").insert(normalizedSplits);
         if (insertError) throw insertError;
       }
 
@@ -395,6 +416,8 @@ export default function SessionCheckoutPage() {
           payment_status: "paid",
           order_status: "closed",
           payment_method: paymentMethodLabel || session.payment_method || "現金",
+          tip_amount: splitTipTotal,
+          total_amount: checkoutTargetTotal,
           amount_received: splitReceivedTotal,
           change_amount: splitChangeTotal,
           paid_at: new Date().toISOString(),
@@ -410,7 +433,7 @@ export default function SessionCheckoutPage() {
       console.error("Failed to confirm checkout", error);
       const maybeMessage = error as { message?: string };
       if (maybeMessage?.message?.includes("session_payment_splits")) {
-        alert("請先在 Supabase 執行 supabase/20260425_session_payment_splits.sql");
+        alert("請先在 Supabase 執行 supabase/20260425_session_payment_splits.sql 與新增 tip 欄位 migration");
         return;
       }
       alert("結帳失敗");
@@ -424,7 +447,7 @@ export default function SessionCheckoutPage() {
   }
 
   if (!session) {
-    return <main className="pos-shell p-6 text-slate-600">找不到主單</main>;
+    return <main className="pos-shell p-6 text-slate-600">找不到這張訂單</main>;
   }
 
   return (
@@ -465,14 +488,14 @@ export default function SessionCheckoutPage() {
               <SummaryCard label="來客數" value={`${session.guest_count} 人`} />
               <SummaryCard label="餐點小計" value={`$${itemsSubtotal}`} />
               <SummaryCard label="折扣" value={`$${discountAmount}`} />
-              <SummaryCard label="小費" value={`$${tipAmount}`} />
+              <SummaryCard label="現有小費" value={`$${tipAmount}`} />
             </div>
 
             <div className="mt-3 rounded-[24px] border border-sky-100 bg-sky-50 px-4 py-3">
               <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-sky-900">左側勾選要分開結帳的品項</p>
-                  <p className="text-xs text-sky-700">先點右側分帳，再勾選這一筆要收哪些餐點</p>
+                  <p className="text-sm font-semibold text-sky-900">先選右側分帳，再勾左側要分開結帳的品項</p>
+                  <p className="text-xs text-sky-700">新增品項會保留在原單，勾選後才會被分配到目前分帳。</p>
                 </div>
                 <div className="rounded-2xl bg-white px-3 py-2 text-sm font-semibold text-sky-800">
                   目前分帳：{splits.find((split) => split.id === activeSplitId)?.splitLabel || "未選擇"}
@@ -480,11 +503,11 @@ export default function SessionCheckoutPage() {
               </div>
             </div>
 
-            <div className="mt-3 rounded-[24px] border border-slate-200 bg-white p-4">
+            <div className="mt-3 min-h-0 flex-1 overflow-hidden rounded-[24px] border border-slate-200 bg-white p-4">
               {orderItems.length === 0 ? (
-                <p className="text-sm text-slate-500">目前沒有可結帳品項</p>
+                <p className="text-sm text-slate-500">目前沒有可結帳的品項。</p>
               ) : (
-                <div className="space-y-3">
+                <div className="pos-scroll h-full space-y-3 pr-1">
                   {orderItems.map((item) => {
                     const ownerSplitId = itemOwnerMap.get(item.id);
                     const ownerSplit = splits.find((split) => split.id === ownerSplitId);
@@ -503,7 +526,7 @@ export default function SessionCheckoutPage() {
                                   ? "border-sky-500 bg-sky-500 text-white"
                                   : "border-slate-300 bg-white text-transparent"
                               } disabled:opacity-50`}
-                              aria-label={`切換 ${item.product_name} 分帳`}
+                              aria-label={`選擇 ${item.product_name} 分帳`}
                             >
                               ✓
                             </button>
@@ -511,11 +534,11 @@ export default function SessionCheckoutPage() {
                               <p className="text-lg font-bold text-slate-900">{item.product_name}</p>
                               <p className="text-sm text-slate-500">
                                 ${Number(item.unit_price)} × {item.quantity}
-                                {item.is_complimentary ? " / 招待" : ""}
+                                {item.is_complimentary ? " / 全招待" : ""}
                                 {item.is_served ? " / 已出餐" : ""}
                               </p>
                               {ownerSplit && (
-                                <p className="mt-1 text-xs font-semibold text-sky-700">已分配到 {ownerSplit.splitLabel}</p>
+                                <p className="mt-1 text-xs font-semibold text-sky-700">目前歸屬：{ownerSplit.splitLabel}</p>
                               )}
                               {(item.custom_note || item.note) && (
                                 <p className="mt-1 text-sm text-slate-500">{item.custom_note || item.note}</p>
@@ -549,13 +572,13 @@ export default function SessionCheckoutPage() {
 
             {minimumSpendShortfall > 0 && (
               <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
-                本單未達低消 {MIN_CHECKOUT_AMOUNT} 元，還差 ${minimumSpendShortfall}
+                此單未達低消 {MIN_CHECKOUT_AMOUNT} 元，還差 ${minimumSpendShortfall}
               </div>
             )}
 
             {isAllComplimentaryOrder && (
               <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-                本單全招待，可直接結帳
+                本單全招待，可直接結帳。
               </div>
             )}
 
@@ -578,8 +601,12 @@ export default function SessionCheckoutPage() {
                       onClick={() => setActiveSplitId(split.id)}
                       className="mb-3 flex w-full items-center justify-between rounded-2xl bg-slate-50 px-3 py-2 text-left"
                     >
-                      <span className="text-sm font-semibold text-slate-900">{split.splitLabel || `第 ${index + 1} 筆`}</span>
-                      <span className="text-xs font-semibold text-slate-500">{split.selectedItemIds.length} 項</span>
+                      <span className="text-sm font-semibold text-slate-900">
+                        {split.splitLabel || `分帳 ${index + 1}`}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500">
+                        {split.selectedItemIds.length} 項
+                      </span>
                     </button>
 
                     <div className="grid gap-3 md:grid-cols-2">
@@ -590,7 +617,7 @@ export default function SessionCheckoutPage() {
                           value={split.splitLabel}
                           onChange={(event) => updateSplit(split.id, "splitLabel", event.target.value)}
                           className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-400"
-                          placeholder={`第 ${index + 1} 筆`}
+                          placeholder={`分帳 ${index + 1}`}
                         />
                       </label>
 
@@ -610,13 +637,24 @@ export default function SessionCheckoutPage() {
                       </label>
 
                       <div className="block">
-                        <span className="mb-2 block text-sm text-slate-500">分帳金額</span>
+                        <span className="mb-2 block text-sm text-slate-500">應收金額</span>
                         <div className="flex h-11 items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-900">
                           ${amount}
                         </div>
                       </div>
 
                       <label className="block">
+                        <span className="mb-2 block text-sm text-slate-500">分帳小費</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={split.tipAmount}
+                          onChange={(event) => updateSplit(split.id, "tipAmount", event.target.value)}
+                          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-400"
+                        />
+                      </label>
+
+                      <label className="block md:col-span-2">
                         <span className="mb-2 block text-sm text-slate-500">實收金額</span>
                         <input
                           type="number"
@@ -646,12 +684,16 @@ export default function SessionCheckoutPage() {
 
             <div className="mt-3 rounded-[24px] bg-slate-50 px-4 py-4">
               <div className="flex justify-between text-sm text-slate-600">
-                <span>總計</span>
+                <span>原始總額</span>
                 <span>${finalTotal}</span>
               </div>
               <div className="mt-2 flex justify-between text-sm text-slate-600">
-                <span>分帳總額</span>
+                <span>目前分帳總額</span>
                 <span>${splitAmountTotal}</span>
+              </div>
+              <div className="mt-2 flex justify-between text-sm text-slate-600">
+                <span>目前小費總額</span>
+                <span>${splitTipTotal}</span>
               </div>
               <div className="mt-2 flex justify-between text-sm text-slate-600">
                 <span>實收總額</span>
@@ -662,7 +704,7 @@ export default function SessionCheckoutPage() {
                 <span>${splitChangeTotal}</span>
               </div>
               <div className="mt-3 border-t border-slate-200 pt-3 text-sm font-semibold text-slate-900">
-                尚差 ${Math.max(finalTotal - splitAmountTotal, 0)}
+                尚差 ${Math.max(checkoutTargetTotal - splitAmountTotal, 0)}
               </div>
             </div>
           </section>

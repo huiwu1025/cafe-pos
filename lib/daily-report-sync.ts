@@ -576,6 +576,49 @@ function formatPaymentMethodChangeNote(
   return `${baseNote} ${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
+function resolveSessionPaymentAllocations(
+  session: SessionRow,
+  splits: SessionPaymentSplitRow[] = []
+) {
+  const normalizedSessionMethod = session.payment_method?.trim() ?? "";
+  const validSplits = splits.filter((split) => Number(split.amount ?? 0) > 0);
+  const splitMethodSummary = [
+    ...new Set(validSplits.map((split) => split.payment_method?.trim()).filter(Boolean)),
+  ].join(" / ");
+
+  const shouldUseSessionMethod =
+    session.payment_status === "paid" &&
+    Boolean(
+      session.payment_method_changed_at ||
+        (normalizedSessionMethod &&
+          splitMethodSummary &&
+          normalizedSessionMethod !== splitMethodSummary)
+    );
+
+  if (shouldUseSessionMethod && normalizedSessionMethod) {
+    return [
+      {
+        method: normalizedSessionMethod,
+        amount: Number(session.total_amount ?? 0),
+      },
+    ];
+  }
+
+  if (validSplits.length > 0) {
+    return validSplits.map((split) => ({
+      method: split.payment_method?.trim() || "未填付款方式",
+      amount: Number(split.amount ?? 0),
+    }));
+  }
+
+  return [
+    {
+      method: normalizedSessionMethod || "未填付款方式",
+      amount: Number(session.total_amount ?? 0),
+    },
+  ];
+}
+
 async function loadAllSessionsAndItems(supabase: ReturnType<typeof getSupabaseServerClient>) {
   const { data: sessionsData, error: sessionsError } = await supabase
     .from("dining_sessions")
@@ -990,40 +1033,24 @@ function buildPaymentSummary(sessions: SessionRow[], paymentSplits: SessionPayme
 
   for (const session of sessions) {
     const splits = splitMap.get(session.id) ?? [];
-    if (splits.length > 0) {
-      for (const split of splits) {
-        const method = split.payment_method?.trim() || "未填付款方式";
-        const grossAmount = Number(split.amount ?? 0);
-        const feeAmount = calculatePaymentFee(grossAmount, method);
-        const existing = summary.get(method) ?? {
-          count: 0,
-          grossAmount: 0,
-          feeAmount: 0,
-          netAmount: 0,
-        };
-        existing.count += 1;
-        existing.grossAmount += grossAmount;
-        existing.feeAmount += feeAmount;
-        existing.netAmount += grossAmount - feeAmount;
-        summary.set(method, existing);
-      }
-      continue;
-    }
+    const allocations = resolveSessionPaymentAllocations(session, splits);
 
-    const method = session.payment_method?.trim() || "未填付款方式";
-    const grossAmount = Number(session.total_amount ?? 0);
-    const feeAmount = calculatePaymentFee(grossAmount, method);
-    const existing = summary.get(method) ?? {
-      count: 0,
-      grossAmount: 0,
-      feeAmount: 0,
-      netAmount: 0,
-    };
-    existing.count += 1;
-    existing.grossAmount += grossAmount;
-    existing.feeAmount += feeAmount;
-    existing.netAmount += grossAmount - feeAmount;
-    summary.set(method, existing);
+    for (const allocation of allocations) {
+      const method = allocation.method || "未填付款方式";
+      const grossAmount = Number(allocation.amount ?? 0);
+      const feeAmount = calculatePaymentFee(grossAmount, method);
+      const existing = summary.get(method) ?? {
+        count: 0,
+        grossAmount: 0,
+        feeAmount: 0,
+        netAmount: 0,
+      };
+      existing.count += 1;
+      existing.grossAmount += grossAmount;
+      existing.feeAmount += feeAmount;
+      existing.netAmount += grossAmount - feeAmount;
+      summary.set(method, existing);
+    }
   }
 
   return summary;
@@ -1066,21 +1093,14 @@ function buildDailyMetric(
   let otherIncome = 0;
   for (const session of paidSessions) {
     const splits = splitMap.get(session.id) ?? [];
-    if (splits.length > 0) {
-      for (const split of splits) {
-        const method = split.payment_method ?? "";
-        const amount = Number(split.amount ?? 0);
-        if (method === "現金") cashIncome += amount;
-        else if (method === "歐付寶") transferIncome += amount;
-        else otherIncome += amount;
-      }
-      continue;
+    const allocations = resolveSessionPaymentAllocations(session, splits);
+    for (const allocation of allocations) {
+      const method = allocation.method ?? "";
+      const amount = Number(allocation.amount ?? 0);
+      if (method === "現金") cashIncome += amount;
+      else if (method === "歐付寶") transferIncome += amount;
+      else otherIncome += amount;
     }
-    const method = session.payment_method ?? "";
-    const amount = Number(session.total_amount ?? 0);
-    if (method === "現金") cashIncome += amount;
-    else if (method === "歐付寶") transferIncome += amount;
-    else otherIncome += amount;
   }
   const itemSummary = buildItemProfitSummary(activeOrderItems, productCosts);
   const productCost = Array.from(itemSummary.values()).reduce((sum, item) => sum + item.estimatedCost, 0);
