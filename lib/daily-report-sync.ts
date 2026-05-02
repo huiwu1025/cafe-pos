@@ -18,6 +18,7 @@ type SessionRow = {
   order_status: string;
   payment_status: string;
   payment_method?: string | null;
+  payment_method_changed_at?: string | null;
   total_amount: number;
   subtotal_amount?: number | null;
   discount_amount?: number | null;
@@ -192,6 +193,7 @@ type SalesDetailRow = {
   customerType: string;
   note: string;
   paymentMethod: string;
+  paymentChangeNote: string;
   sortDateTime: string;
   orderGroup: string;
   sourceType: "live" | "manual";
@@ -391,10 +393,10 @@ function buildSalesDetailRows(
             .join(" / ")
         : session.payment_method?.trim() || "";
 
-    rows.push({
-      businessDate: formatBusinessDate(session.created_at ?? ""),
-      month: `'${formatBusinessDate(session.created_at ?? "").slice(0, 7)}`,
-      sessionNumber: session.session_number,
+      rows.push({
+        businessDate: formatBusinessDate(session.created_at ?? ""),
+        month: `'${formatBusinessDate(session.created_at ?? "").slice(0, 7)}`,
+        sessionNumber: session.session_number,
       productName: item.product_name,
       category: product?.category ?? "",
       quantity,
@@ -404,13 +406,17 @@ function buildSalesDetailRows(
       productCost,
       grossProfit: salesAmount - productCost,
       discountAmount: Number(session.discount_amount ?? 0),
-      complimentaryAmount: complimentaryTotalsBySession.get(session.id) ?? 0,
-      customerType: session.customer_type ?? "",
-      note: session.customer_label ?? session.session_number,
-      paymentMethod,
-      sortDateTime: session.created_at ?? session.session_number,
-      orderGroup: session.session_number,
-      sourceType: "live",
+        complimentaryAmount: complimentaryTotalsBySession.get(session.id) ?? 0,
+        customerType: session.customer_type ?? "",
+        note: session.customer_label ?? session.session_number,
+        paymentMethod,
+        paymentChangeNote: formatPaymentMethodChangeNote(
+          session.payment_method_changed_at,
+          session.payment_status
+        ),
+        sortDateTime: session.created_at ?? session.session_number,
+        orderGroup: session.session_number,
+        sourceType: "live",
     });
 
     return rows;
@@ -438,10 +444,11 @@ function buildSalesDetailRows(
       productCost,
       grossProfit: salesAmount - productCost,
       discountAmount: 0,
-      complimentaryAmount: 0,
-      customerType: "",
-      note: item.notes ?? "",
-      paymentMethod: "",
+        complimentaryAmount: 0,
+        customerType: "",
+        note: item.notes ?? "",
+        paymentMethod: "",
+        paymentChangeNote: "",
         sortDateTime: item.business_date,
         orderGroup: item.notes ?? item.product_name,
         sourceType: "manual",
@@ -518,6 +525,23 @@ function calculatePaymentFee(amount: number, paymentMethod: string | null | unde
   if (method === "歐付寶") return Math.max(1, Math.round(amount * 0.0245));
   if (method === "TWQR") return Math.max(1, Math.round(amount * 0.029));
   return 0;
+}
+
+function formatPaymentMethodChangeNote(
+  changedAt: string | null | undefined,
+  paymentStatus: string | null | undefined
+) {
+  if (!changedAt || paymentStatus !== "paid") return "";
+
+  const parsed = new Date(changedAt);
+  if (Number.isNaN(parsed.getTime())) return "已結帳後改付款方式";
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const hours = String(parsed.getHours()).padStart(2, "0");
+  const minutes = String(parsed.getMinutes()).padStart(2, "0");
+  return `已結帳後改付款方式 ${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
 async function loadAllSessionsAndItems(supabase: ReturnType<typeof getSupabaseServerClient>) {
@@ -2132,23 +2156,25 @@ export async function syncTodayDashboardToGoogleSheets(targetBusinessDate?: stri
   ]);
 
   await replaceSheetValues("訂單明細", [
-      [
-        "日期",
-        "月份",
-        "主單編號",
-        "品項",
+        [
+          "日期",
+          "月份",
+          "主單編號",
+          "品項",
         "類別",
         "銷售數量",
         "售價",
         "單位成本",
         "商品營業額",
         "商品成本",
-        "毛利",
-        "折扣金額",
-        "招待金額",
-        "客群類型",
-        "備註",
-      ],
+          "毛利",
+          "折扣金額",
+          "招待金額",
+          "付款方式",
+          "付款異動",
+          "客群類型",
+          "備註",
+        ],
       ...salesDetailRows.map((row, index) => {
         const previous = salesDetailRows[index - 1];
         const sameGroup =
@@ -2168,13 +2194,15 @@ export async function syncTodayDashboardToGoogleSheets(targetBusinessDate?: stri
             row.unitCost,
             row.salesAmount,
             row.productCost,
-            row.grossProfit,
-            sameGroup ? "" : row.discountAmount,
-            sameGroup ? "" : row.complimentaryAmount,
-            row.customerType,
-            row.note,
-          ];
-      }),
+              row.grossProfit,
+              sameGroup ? "" : row.discountAmount,
+              sameGroup ? "" : row.complimentaryAmount,
+              sameGroup ? "" : row.paymentMethod,
+              sameGroup ? "" : row.paymentChangeNote,
+              row.customerType,
+              row.note,
+            ];
+        }),
     ]);
 
   const monthlyDetailHeaders = [
@@ -2188,12 +2216,14 @@ export async function syncTodayDashboardToGoogleSheets(targetBusinessDate?: stri
     "單位成本",
     "商品營業額",
     "商品成本",
-    "毛利",
-    "折扣金額",
-    "招待金額",
-    "客群類型",
-    "備註",
-  ];
+      "毛利",
+      "折扣金額",
+      "招待金額",
+      "付款方式",
+      "付款異動",
+      "客群類型",
+      "備註",
+    ];
 
   const salesDetailRowsByMonth = new Map<string, SalesDetailRow[]>();
   for (const row of salesDetailRows) {
@@ -2230,12 +2260,14 @@ export async function syncTodayDashboardToGoogleSheets(targetBusinessDate?: stri
           row.unitCost,
           row.salesAmount,
           row.productCost,
-          row.grossProfit,
-          sameGroup ? "" : row.discountAmount,
-          sameGroup ? "" : row.complimentaryAmount,
-          row.customerType,
-          row.note,
-        ];
+            row.grossProfit,
+            sameGroup ? "" : row.discountAmount,
+            sameGroup ? "" : row.complimentaryAmount,
+            sameGroup ? "" : row.paymentMethod,
+            sameGroup ? "" : row.paymentChangeNote,
+            row.customerType,
+            row.note,
+          ];
       }),
     ]);
   }
@@ -2728,51 +2760,53 @@ export async function syncTodayDashboardToGoogleSheets(targetBusinessDate?: stri
         { columns: [2, 3, 5, 6, 10], color: { red: 0.97, green: 0.97, blue: 0.97 } },
       ],
     },
-    {
-        title: "訂單明細",
-        frozenRows: 1,
-        headerRowIndex: 0,
-        dateColumns: [0],
-        currencyColumns: [7, 8, 9, 10, 11, 12],
-        autoResizeColumnCount: 15,
-        headerRowHeight: 42,
-        bodyRowHeight: 34,
-        columnWidths: [145, 125, 180, 220, 140, 110, 125, 125, 145, 145, 145, 135, 135, 140, 260],
-        leftAlignColumns: [2, 3, 4, 14],
-        centerAlignColumns: [0, 1, 5, 13],
-        rightAlignColumns: [6, 7, 8, 9, 10, 11, 12],
-        columnBackgrounds: [
-          { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
-          { columns: [2, 3, 4, 13], color: { red: 0.95, green: 0.97, blue: 0.93 } },
-          { columns: [6, 7, 8, 9, 10], color: { red: 1, green: 0.96, blue: 0.9 } },
-          { columns: [11, 12], color: { red: 1, green: 0.92, blue: 0.92 } },
-          { columns: [5, 14], color: { red: 0.97, green: 0.97, blue: 0.97 } },
-        ],
-      },
-      ...Array.from(salesDetailRowsByMonth.keys())
-        .map((month) => buildMonthlyOrderSheetTitle(month))
-        .filter(Boolean)
-        .map((title) => ({
-          title,
+        {
+          title: "訂單明細",
           frozenRows: 1,
           headerRowIndex: 0,
           dateColumns: [0],
           currencyColumns: [6, 7, 8, 9, 10, 11, 12],
-          autoResizeColumnCount: 15,
+          autoResizeColumnCount: 17,
           headerRowHeight: 42,
           bodyRowHeight: 34,
-          columnWidths: [145, 125, 180, 220, 140, 110, 125, 125, 145, 145, 145, 135, 135, 140, 260],
-          leftAlignColumns: [2, 3, 4, 14],
-          centerAlignColumns: [0, 1, 5, 13],
+          columnWidths: [145, 125, 190, 220, 140, 110, 125, 125, 145, 145, 145, 135, 135, 180, 210, 140, 260],
+          leftAlignColumns: [2, 3, 4, 13, 14, 16],
+          centerAlignColumns: [0, 1, 5, 15],
           rightAlignColumns: [6, 7, 8, 9, 10, 11, 12],
           columnBackgrounds: [
             { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
-            { columns: [2, 3, 4, 13], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+            { columns: [2, 3, 4, 15], color: { red: 0.95, green: 0.97, blue: 0.93 } },
             { columns: [6, 7, 8, 9, 10], color: { red: 1, green: 0.96, blue: 0.9 } },
             { columns: [11, 12], color: { red: 1, green: 0.92, blue: 0.92 } },
-            { columns: [5, 14], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+            { columns: [13, 14, 16], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+            { columns: [5], color: { red: 0.97, green: 0.97, blue: 0.97 } },
           ],
-        })),
+        },
+      ...Array.from(salesDetailRowsByMonth.keys())
+        .map((month) => buildMonthlyOrderSheetTitle(month))
+        .filter(Boolean)
+          .map((title) => ({
+            title,
+            frozenRows: 1,
+            headerRowIndex: 0,
+            dateColumns: [0],
+            currencyColumns: [6, 7, 8, 9, 10, 11, 12],
+            autoResizeColumnCount: 17,
+            headerRowHeight: 42,
+            bodyRowHeight: 34,
+            columnWidths: [145, 125, 190, 220, 140, 110, 125, 125, 145, 145, 145, 135, 135, 180, 210, 140, 260],
+            leftAlignColumns: [2, 3, 4, 13, 14, 16],
+            centerAlignColumns: [0, 1, 5, 15],
+            rightAlignColumns: [6, 7, 8, 9, 10, 11, 12],
+            columnBackgrounds: [
+              { columns: [0, 1], color: { red: 0.92, green: 0.96, blue: 0.99 } },
+              { columns: [2, 3, 4, 15], color: { red: 0.95, green: 0.97, blue: 0.93 } },
+              { columns: [6, 7, 8, 9, 10], color: { red: 1, green: 0.96, blue: 0.9 } },
+              { columns: [11, 12], color: { red: 1, green: 0.92, blue: 0.92 } },
+              { columns: [13, 14, 16], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+              { columns: [5], color: { red: 0.97, green: 0.97, blue: 0.97 } },
+            ],
+          })),
       {
         title: "品項成本表",
         frozenRows: 1,

@@ -21,6 +21,7 @@ type SessionData = {
   change_amount?: number | null;
   created_at?: string | null;
   paid_at?: string | null;
+  payment_method_changed_at?: string | null;
 };
 
 type Product = {
@@ -785,28 +786,41 @@ export default function SessionPage() {
   }
 
   async function savePaymentMethod() {
-    if (!session) return;
+      if (!session) return;
 
-    try {
-      setIsSavingPaymentMethod(true);
+      try {
+        setIsSavingPaymentMethod(true);
 
-      const { error } = await supabase
-        .from("dining_sessions")
-        .update({
-          payment_method: paymentMethod,
-        })
-        .eq("id", sessionId);
+        const previousPaymentMethod = session.payment_method?.trim() ?? "";
+        const nextPaymentMethod = paymentMethod.trim();
+        const isPaidPaymentMethodChange =
+          session.payment_status === "paid" && previousPaymentMethod !== nextPaymentMethod;
+        const paymentMethodChangedAt = isPaidPaymentMethodChange ? new Date().toISOString() : null;
 
-      if (error) throw error;
+        const { error } = await supabase
+          .from("dining_sessions")
+          .update({
+            payment_method: paymentMethod,
+            ...(isPaidPaymentMethodChange
+              ? { payment_method_changed_at: paymentMethodChangedAt }
+              : {}),
+          })
+          .eq("id", sessionId);
+
+        if (error) throw error;
 
       setSession((prev) =>
         prev
-          ? {
-              ...prev,
-              payment_method: paymentMethod,
-            }
-          : prev
-      );
+            ? {
+                ...prev,
+                payment_method: paymentMethod,
+                payment_method_changed_at:
+                  isPaidPaymentMethodChange && paymentMethodChangedAt
+                    ? paymentMethodChangedAt
+                    : prev.payment_method_changed_at ?? null,
+              }
+            : prev
+        );
     } catch (error) {
       console.error("儲存付款方式失敗：", error);
       alert("儲存付款方式失敗");
