@@ -185,7 +185,7 @@ export default function SessionPage() {
 
   const [activeCategory, setActiveCategory] = useState<string>("全部");
 
-  const isLocked = session?.payment_status === "paid";
+  const isPaidSession = session?.payment_status === "paid";
 
   useEffect(() => {
     const nextDrafts: Record<string, string> = {};
@@ -462,14 +462,27 @@ export default function SessionPage() {
     const tip = nextTipAmount ?? Number(session?.tip_amount ?? 0);
     const total = Math.max(subtotal - discount, 0) + Math.max(Number(tip ?? 0), 0);
 
+    const nextAmountReceived = Number(session?.amount_received ?? 0);
+    const updatePayload: {
+      subtotal_amount: number;
+      discount_amount: number;
+      total_amount: number;
+      tip_amount: number;
+      change_amount?: number;
+    } = {
+      subtotal_amount: subtotal,
+      discount_amount: discount,
+      total_amount: total,
+      tip_amount: Math.max(Number(tip ?? 0), 0),
+    };
+
+    if (session?.payment_status === "paid") {
+      updatePayload.change_amount = Math.max(nextAmountReceived - total, 0);
+    }
+
     const { error: updateError } = await supabase
       .from("dining_sessions")
-      .update({
-        subtotal_amount: subtotal,
-        discount_amount: discount,
-        total_amount: total,
-        tip_amount: Math.max(Number(tip ?? 0), 0),
-      })
+      .update(updatePayload)
       .eq("id", sessionId);
 
     if (updateError) throw updateError;
@@ -508,8 +521,6 @@ export default function SessionPage() {
   }
 
   async function addManualSurcharge() {
-    if (isLocked) return;
-
     const amount = Number(manualSurchargeAmount.trim());
     if (!Number.isFinite(amount) || amount <= 0) {
       alert("請輸入大於 0 的金額");
@@ -551,8 +562,6 @@ export default function SessionPage() {
   }
 
   async function addOrderItem(product: Product) {
-    if (isLocked) return;
-
     try {
       setIsAdding(true);
       const specNote = buildSpecNote();
@@ -610,8 +619,6 @@ export default function SessionPage() {
   }
 
   async function updateItemQuantity(item: OrderItem, nextQty: number) {
-    if (isLocked) return;
-
     try {
       if (nextQty <= 0) {
         await removeOrderItem(item.id);
@@ -640,8 +647,6 @@ export default function SessionPage() {
   }
 
   async function removeOrderItem(itemId: string) {
-    if (isLocked) return;
-
     try {
       const { error } = await supabase
         .from("order_items")
@@ -660,8 +665,6 @@ export default function SessionPage() {
   }
 
   async function toggleComplimentary(item: OrderItem) {
-    if (isLocked) return;
-
     try {
       const nextValue = !item.is_complimentary;
 
@@ -684,8 +687,6 @@ export default function SessionPage() {
   }
 
   async function saveCustomNote(itemId: string) {
-    if (isLocked) return;
-
     try {
       setSavingNoteId(itemId);
 
@@ -716,6 +717,10 @@ export default function SessionPage() {
       const nextDiscount = calculateOrderDiscount(itemsSubtotal, nextType);
       const nextTip = Number(session.tip_amount ?? 0);
       const nextTotal = Math.max(itemsSubtotal - nextDiscount, 0) + Math.max(nextTip, 0);
+      const nextChangeAmount =
+        session.payment_status === "paid"
+          ? Math.max(Number(session.amount_received ?? 0) - nextTotal, 0)
+          : undefined;
 
       const { error } = await supabase
         .from("dining_sessions")
@@ -723,6 +728,7 @@ export default function SessionPage() {
           customer_type: nextType,
           discount_amount: nextDiscount,
           total_amount: nextTotal,
+          ...(session.payment_status === "paid" ? { change_amount: nextChangeAmount } : {}),
         })
         .eq("id", sessionId);
 
@@ -735,6 +741,9 @@ export default function SessionPage() {
               customer_type: nextType,
               discount_amount: nextDiscount,
               total_amount: nextTotal,
+              ...(prev?.payment_status === "paid"
+                ? { change_amount: Math.max(Number(prev.amount_received ?? 0) - nextTotal, 0) }
+                : {}),
             }
           : prev
       );
@@ -807,7 +816,7 @@ export default function SessionPage() {
   }
 
   async function saveTipAmount() {
-    if (!session || isLocked) return;
+    if (!session) return;
 
     try {
       setIsSavingTip(true);
@@ -946,8 +955,6 @@ export default function SessionPage() {
   }
 
   async function toggleServed(item: OrderItem) {
-    if (isLocked) return;
-
     try {
       const nextValue = !item.is_served;
 
@@ -968,7 +975,7 @@ export default function SessionPage() {
   }
 
   async function updateGuestCount(nextGuestCount: number) {
-    if (!session || isLocked) return;
+    if (!session) return;
 
     const normalized = Math.max(1, nextGuestCount);
 
@@ -1016,7 +1023,7 @@ export default function SessionPage() {
   }
 
   async function handleTransferSeat() {
-    if (isLocked) return;
+    if (isPaidSession) return;
     if (transferSeatCodes.length === 0) {
       alert("請先選擇要轉去的座位");
       return;
@@ -1200,7 +1207,7 @@ export default function SessionPage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {!isLocked && (
+              {!isPaidSession && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1321,7 +1328,7 @@ export default function SessionPage() {
                           key={method}
                           type="button"
                           onClick={() => setPaymentMethod(method)}
-                          disabled={isLocked}
+                          disabled={false}
                           className={`min-h-[52px] rounded-2xl px-3 text-base font-semibold transition ${
                             paymentMethod === method
                               ? "bg-sky-500 text-white"
@@ -1336,7 +1343,7 @@ export default function SessionPage() {
                     <button
                       type="button"
                       onClick={savePaymentMethod}
-                      disabled={isLocked || isSavingPaymentMethod}
+                      disabled={isSavingPaymentMethod}
                       className="mt-3 min-h-[46px] w-full rounded-2xl bg-sky-100 px-4 text-base font-medium text-sky-900 hover:bg-sky-200 disabled:opacity-60"
                     >
                       {isSavingPaymentMethod ? "儲存中..." : "儲存付款方式"}
@@ -1349,7 +1356,7 @@ export default function SessionPage() {
                       <button
                         type="button"
                         onClick={() => updateGuestCount(session.guest_count - 1)}
-                        disabled={isLocked || isSavingGuestCount || session.guest_count <= 1}
+                        disabled={isSavingGuestCount || session.guest_count <= 1}
                         className="h-11 rounded-2xl bg-slate-200 text-lg font-bold text-slate-800 disabled:opacity-50"
                       >
                         -
@@ -1360,7 +1367,7 @@ export default function SessionPage() {
                       <button
                         type="button"
                         onClick={() => updateGuestCount(session.guest_count + 1)}
-                        disabled={isLocked || isSavingGuestCount}
+                        disabled={isSavingGuestCount}
                         className="h-11 rounded-2xl bg-slate-200 text-lg font-bold text-slate-800 disabled:opacity-50"
                       >
                         +
@@ -1413,9 +1420,9 @@ export default function SessionPage() {
                     </div>
                   </div>
 
-                  {isLocked && (
+                  {isPaidSession && (
                     <div className="rounded-2xl bg-green-100 p-4 text-sm font-medium text-green-800">
-                      此訂單已結帳，目前建議僅查看。
+                      此訂單已結帳，仍可修正內容；金額異動時總額與找零會同步更新。
                     </div>
                   )}
                 </div>
@@ -1456,7 +1463,7 @@ export default function SessionPage() {
                     key={product.id}
                     type="button"
                     onClick={() => addOrderItem(product)}
-                    disabled={isAdding || isLocked}
+                    disabled={isAdding}
                     className="flex h-[132px] flex-col justify-between rounded-[24px] border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:bg-amber-50 hover:shadow-md active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 md:h-[140px]"
                   >
                     <div>
@@ -1473,7 +1480,7 @@ export default function SessionPage() {
                 <button
                   type="button"
                   onClick={() => setShowManualSurchargeModal(true)}
-                  disabled={isAdding || isLocked}
+                  disabled={isAdding}
                   className="flex h-[132px] flex-col justify-between rounded-[24px] border border-rose-200 bg-rose-50 p-4 text-left shadow-sm transition hover:bg-rose-100 hover:shadow-md active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 md:h-[140px]"
                 >
                   <div>
@@ -1530,7 +1537,7 @@ export default function SessionPage() {
                                 <button
                                   type="button"
                                   onClick={() => toggleServed(item)}
-                                  disabled={isLocked}
+                                  disabled={false}
                                   className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border-2 text-sm font-bold transition disabled:opacity-60 ${
                                     isServed
                                       ? "border-emerald-500 bg-emerald-500 text-white"
@@ -1591,14 +1598,14 @@ export default function SessionPage() {
                                   [item.id]: e.target.value,
                                 }))
                               }
-                              disabled={isLocked}
+                              disabled={false}
                               placeholder="備註"
                               className="h-14 rounded-2xl border border-gray-300 px-4 text-base outline-none focus:border-amber-500 disabled:bg-gray-100"
                             />
                             <button
                               type="button"
                               onClick={() => saveCustomNote(item.id)}
-                              disabled={isLocked || savingNoteId === item.id}
+                              disabled={savingNoteId === item.id}
                               className="min-h-[56px] rounded-2xl bg-amber-100 px-6 text-base font-semibold text-amber-900 hover:bg-amber-200 disabled:opacity-60"
                             >
                               {savingNoteId === item.id ? "儲存中..." : "存備註"}
@@ -1609,7 +1616,7 @@ export default function SessionPage() {
                             <button
                               type="button"
                               onClick={() => updateItemQuantity(item, item.quantity - 1)}
-                              disabled={isLocked}
+                              disabled={false}
                               className="min-h-[52px] rounded-2xl bg-gray-200 px-3 text-xl font-bold text-gray-800 hover:bg-gray-300 disabled:opacity-60"
                             >
                               -1
@@ -1622,7 +1629,7 @@ export default function SessionPage() {
                             <button
                               type="button"
                               onClick={() => updateItemQuantity(item, item.quantity + 1)}
-                              disabled={isLocked}
+                              disabled={false}
                               className="min-h-[52px] rounded-2xl bg-blue-500 px-3 text-xl font-bold text-white hover:bg-blue-600 disabled:opacity-60"
                             >
                               +1
@@ -1631,7 +1638,7 @@ export default function SessionPage() {
                             <button
                               type="button"
                               onClick={() => toggleComplimentary(item)}
-                              disabled={isLocked}
+                              disabled={false}
                               className={`min-h-[52px] rounded-2xl px-2 text-sm font-semibold leading-tight disabled:opacity-60 ${
                                 isComplimentary
                                   ? "bg-amber-500 text-white hover:bg-amber-600"
@@ -1644,7 +1651,7 @@ export default function SessionPage() {
                             <button
                               type="button"
                               onClick={() => removeOrderItem(item.id)}
-                              disabled={isLocked}
+                              disabled={false}
                               className="min-h-[52px] rounded-2xl bg-red-500 px-2 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-60"
                             >
                               刪除
@@ -1675,14 +1682,14 @@ export default function SessionPage() {
                       min={0}
                       value={tipAmountInput}
                       onChange={(e) => setTipAmountInput(e.target.value)}
-                      disabled={isLocked}
+                      disabled={false}
                       className="h-11 rounded-2xl border border-gray-300 px-4 text-sm outline-none focus:border-amber-500 disabled:bg-gray-100"
                       placeholder="小費金額"
                     />
                     <button
                       type="button"
                       onClick={saveTipAmount}
-                      disabled={isLocked || isSavingTip}
+                      disabled={isSavingTip}
                       className="min-h-[44px] rounded-2xl bg-purple-100 px-4 text-sm font-semibold text-purple-900 hover:bg-purple-200 disabled:opacity-60"
                     >
                       {isSavingTip ? "儲存中..." : "儲存小費"}
@@ -1695,7 +1702,7 @@ export default function SessionPage() {
                       min={0}
                       value={amountReceivedInput}
                       onChange={(e) => setAmountReceivedInput(e.target.value)}
-                      disabled={isLocked}
+                      disabled={isPaidSession}
                       className="h-11 rounded-2xl border border-gray-300 px-4 text-sm outline-none focus:border-amber-500 disabled:bg-gray-100"
                       placeholder="實收金額"
                     />
@@ -1724,10 +1731,10 @@ export default function SessionPage() {
                   <button
                     type="button"
                     onClick={() => router.push(`/session/${sessionId}/checkout`)}
-                    disabled={isLocked}
+                    disabled={isPaidSession}
                     className="mt-3 min-h-[56px] w-full rounded-3xl bg-emerald-500 px-4 text-xl font-bold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                  {isLocked ? "已結帳" : "前往結帳"}
+                  {isPaidSession ? "已結帳" : "前往結帳"}
                 </button>
               </div>
             </section>
@@ -1735,7 +1742,7 @@ export default function SessionPage() {
         </div>
       </main>
 
-      {showCheckoutModal && !isLocked && (
+      {showCheckoutModal && !isPaidSession && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-2xl font-bold text-gray-900">確認結帳</h3>
@@ -1796,7 +1803,7 @@ export default function SessionPage() {
         </div>
       )}
 
-      {showManualSurchargeModal && !isLocked && (
+      {showManualSurchargeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-2xl font-bold text-gray-900">新增補價差</h3>
@@ -1851,7 +1858,7 @@ export default function SessionPage() {
         </div>
       )}
 
-      {showTransferSeatModal && !isLocked && (
+      {showTransferSeatModal && !isPaidSession && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-3xl rounded-[28px] bg-white p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
