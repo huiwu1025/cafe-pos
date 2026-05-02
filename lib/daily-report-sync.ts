@@ -378,20 +378,26 @@ function buildSalesDetailRows(
     const session = sessionMap.get(item.session_id);
     if (!session) return rows;
 
-    const product = productCostMap.get(normalizeProductName(item.product_name));
-    const quantity = Number(item.quantity ?? 0);
-    const salesAmount = Number(item.line_total ?? 0);
-    const unitPrice =
-      quantity > 0 ? Math.round((salesAmount / quantity) * 100) / 100 : Number(product?.price ?? 0);
-    const unitCost = Number(product?.unitCost ?? 0);
-    const productCost = quantity * unitCost;
-    const sessionSplits = splitMap.get(session.id) ?? [];
-    const paymentMethod =
-      sessionSplits.length > 0
-        ? sessionSplits
-            .map((split) => `${split.payment_method}${split.amount ? ` ${split.amount}` : ""}`)
-            .join(" / ")
-        : session.payment_method?.trim() || "";
+      const product = productCostMap.get(normalizeProductName(item.product_name));
+      const quantity = Number(item.quantity ?? 0);
+      const salesAmount = Number(item.line_total ?? 0);
+      const unitPrice =
+        quantity > 0 ? Math.round((salesAmount / quantity) * 100) / 100 : Number(product?.price ?? 0);
+      const unitCost = Number(product?.unitCost ?? 0);
+      const productCost = quantity * unitCost;
+      const sessionSplits = splitMap.get(session.id) ?? [];
+      const paymentChangeNote = formatPaymentMethodChangeNote(
+        session.payment_method_changed_at,
+        session.payment_status
+      );
+      const paymentMethod =
+        paymentChangeNote && session.payment_method?.trim()
+          ? session.payment_method.trim()
+          : sessionSplits.length > 0
+          ? sessionSplits
+              .map((split) => `${split.payment_method}${split.amount ? ` ${split.amount}` : ""}`)
+              .join(" / ")
+          : session.payment_method?.trim() || "";
 
       rows.push({
         businessDate: formatBusinessDate(session.created_at ?? ""),
@@ -404,20 +410,17 @@ function buildSalesDetailRows(
       unitCost,
       salesAmount,
       productCost,
-      grossProfit: salesAmount - productCost,
-      discountAmount: Number(session.discount_amount ?? 0),
+        grossProfit: salesAmount - productCost,
+        discountAmount: Number(session.discount_amount ?? 0),
         complimentaryAmount: complimentaryTotalsBySession.get(session.id) ?? 0,
         customerType: session.customer_type ?? "",
         note: session.customer_label ?? session.session_number,
         paymentMethod,
-        paymentChangeNote: formatPaymentMethodChangeNote(
-          session.payment_method_changed_at,
-          session.payment_status
-        ),
+        paymentChangeNote,
         sortDateTime: session.created_at ?? session.session_number,
         orderGroup: session.session_number,
         sourceType: "live",
-    });
+      });
 
     return rows;
   }, []);
