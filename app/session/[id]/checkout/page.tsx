@@ -427,7 +427,7 @@ export default function SessionCheckoutPage() {
       if (updateError) throw updateError;
 
       alert("結帳完成");
-      router.push(`/session/${sessionId}`);
+      router.push("/");
       router.refresh();
     } catch (error) {
       console.error("Failed to confirm checkout", error);
