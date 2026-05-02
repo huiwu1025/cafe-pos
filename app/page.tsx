@@ -855,28 +855,38 @@ export default function Home() {
                       </div>
                       <button type="button" onClick={() => setViewingSession(null)} className="h-10 rounded-2xl bg-slate-100 px-3 text-sm font-semibold text-slate-700">關閉</button>
                     </div>
-                    <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3">
-                      <AsideCard label="主單編號" value={viewingSession.sessionNumber} />
-                      <AsideCard label="座位" value={formatSeatLabel(viewingSession.seatCodes)} />
-                      <div className="grid grid-cols-2 gap-2">
-                        <AsideCard label="來客數" value={`${viewingSession.guestCount} 人`} />
-                        <AsideCard label="付款狀態" value={viewingSession.paymentStatus} />
+                    <div className="mt-3 flex min-h-0 flex-1 flex-col">
+                      <div className="pos-scroll min-h-0 flex-1 space-y-3 pr-1">
+                        <AsideCard label="主單編號" value={viewingSession.sessionNumber} />
+                        <AsideCard label="座位" value={formatSeatLabel(viewingSession.seatCodes)} />
+                        <div className="grid grid-cols-2 gap-2">
+                          <AsideCard label="來客數" value={`${viewingSession.guestCount} 人`} />
+                          <AsideCard label="付款狀態" value={viewingSession.paymentStatus} />
+                        </div>
+                        <AsideCard
+                          label="出餐狀態"
+                          value={viewingSession.unservedCount > 0 ? `${viewingSession.unservedCount} 項未出餐` : "已全數出餐"}
+                        />
                       </div>
-                      <AsideCard
-                        label="出餐狀態"
-                        value={viewingSession.unservedCount > 0 ? `${viewingSession.unservedCount} 項未出餐` : "已全數出餐"}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTransferSeatCodes([]);
-                          setShowTransferModal(true);
-                        }}
-                        className="h-11 w-full rounded-[20px] bg-sky-100 text-sm font-semibold text-sky-800 hover:bg-sky-200"
-                      >
-                        轉桌
-                      </button>
-                      <button type="button" onClick={() => router.push(`/session/${viewingSession.sessionId}`)} className="mt-auto h-14 w-full rounded-[22px] bg-sky-500 text-lg font-bold text-white hover:bg-sky-600">進入訂單</button>
+                      <div className="mt-3 grid gap-2 border-t border-slate-100 bg-white/80 pt-3 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur-sm">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTransferSeatCodes([]);
+                            setShowTransferModal(true);
+                          }}
+                          className="h-13 w-full rounded-[20px] bg-sky-100 px-4 text-base font-semibold text-sky-800 transition active:scale-[0.99] hover:bg-sky-200"
+                        >
+                          轉桌
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/session/${viewingSession.sessionId}`)}
+                          className="h-16 w-full rounded-[22px] bg-sky-500 px-4 text-xl font-bold text-white transition active:scale-[0.99] hover:bg-sky-600"
+                        >
+                          進入訂單
+                        </button>
+                      </div>
                     </div>
                   </>
                 ) : viewingReservation ? (
