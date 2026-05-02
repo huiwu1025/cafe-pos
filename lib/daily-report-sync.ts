@@ -386,9 +386,17 @@ function buildSalesDetailRows(
       const unitCost = Number(product?.unitCost ?? 0);
       const productCost = quantity * unitCost;
       const sessionSplits = splitMap.get(session.id) ?? [];
+      const splitPaymentMethod =
+        sessionSplits.length > 0
+          ? sessionSplits
+              .map((split) => `${split.payment_method}${split.amount ? ` ${split.amount}` : ""}`)
+              .join(" / ")
+          : "";
       const paymentChangeNote = formatPaymentMethodChangeNote(
         session.payment_method_changed_at,
-        session.payment_status
+        session.payment_status,
+        session.payment_method,
+        splitPaymentMethod
       );
       const paymentMethod =
         paymentChangeNote && session.payment_method?.trim()
@@ -532,19 +540,40 @@ function calculatePaymentFee(amount: number, paymentMethod: string | null | unde
 
 function formatPaymentMethodChangeNote(
   changedAt: string | null | undefined,
-  paymentStatus: string | null | undefined
+  paymentStatus: string | null | undefined,
+  sessionPaymentMethod?: string | null,
+  splitPaymentMethod?: string
 ) {
-  if (!changedAt || paymentStatus !== "paid") return "";
+  if (paymentStatus !== "paid") return "";
+
+  const normalizedSessionMethod = sessionPaymentMethod?.trim() ?? "";
+  const normalizedSplitMethod = splitPaymentMethod?.trim() ?? "";
+
+  if (!changedAt) {
+    if (
+      normalizedSessionMethod &&
+      normalizedSplitMethod &&
+      normalizedSessionMethod !== normalizedSplitMethod
+    ) {
+      return `已結帳後改付款方式 ${normalizedSplitMethod} → ${normalizedSessionMethod}`;
+    }
+    return "";
+  }
 
   const parsed = new Date(changedAt);
-  if (Number.isNaN(parsed.getTime())) return "已結帳後改付款方式";
+  const baseNote =
+    normalizedSessionMethod && normalizedSplitMethod && normalizedSessionMethod !== normalizedSplitMethod
+      ? `已結帳後改付款方式 ${normalizedSplitMethod} → ${normalizedSessionMethod}`
+      : "已結帳後改付款方式";
+
+  if (Number.isNaN(parsed.getTime())) return baseNote;
 
   const year = parsed.getFullYear();
   const month = String(parsed.getMonth() + 1).padStart(2, "0");
   const day = String(parsed.getDate()).padStart(2, "0");
   const hours = String(parsed.getHours()).padStart(2, "0");
   const minutes = String(parsed.getMinutes()).padStart(2, "0");
-  return `已結帳後改付款方式 ${year}-${month}-${day} ${hours}:${minutes}`;
+  return `${baseNote} ${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
 async function loadAllSessionsAndItems(supabase: ReturnType<typeof getSupabaseServerClient>) {
